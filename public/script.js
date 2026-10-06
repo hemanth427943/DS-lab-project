@@ -5,6 +5,7 @@ const FORM_ERROR_FIELDS = ["number", "name", "description", "cover", "github", "
 
 let experiments = [];
 let editingId = null;                    // id of the experiment being edited, or null when adding
+let deletingId = null;                   // id of the experiment waiting for delete confirmation
 let mainCover = "";                      // main cover currently chosen in the form
 const mainVideo = { file: null, key: "" }; // newly chosen file, or key of the saved video
 let refreshMainVideo = () => {};
@@ -139,8 +140,9 @@ async function editExperiment(id, data) {
   return true;
 }
 
+// Deleting is two steps: the card menu opens the confirmation dialog,
+// and only the dialog's Delete button calls deleteExperiment().
 async function deleteExperiment(id) {
-  if (!confirm("Are you sure you want to delete this experiment?")) return;
   const removed = experiments.find((item) => item.id === id);
   try {
     await apiRequest(`/experiments/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -156,6 +158,60 @@ async function deleteExperiment(id) {
     showToast(`Could not delete experiment: ${error.message}`, true);
   }
 }
+
+// ---------- Delete confirmation dialog ----------
+const deleteModal = (() => {
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.id = "deleteModal";
+  modal.hidden = true;
+  modal.setAttribute("role", "alertdialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "deleteModalTitle");
+  modal.setAttribute("aria-describedby", "deleteModalText");
+  modal.innerHTML = `
+    <div class="modal__backdrop" data-delete-cancel></div>
+    <div class="modal__panel confirm">
+      <h2 id="deleteModalTitle">Delete experiment</h2>
+      <p class="confirm__text" id="deleteModalText">Are you sure you want to delete this experiment?</p>
+      <p class="confirm__name" data-delete-name></p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" data-delete-cancel>Cancel</button>
+        <button type="button" class="btn btn--danger" data-delete-confirm>Delete</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  return modal;
+})();
+
+const deleteConfirmBtn = deleteModal.querySelector("[data-delete-confirm]");
+
+function requestDeleteExperiment(id) {
+  const item = experiments.find((entry) => entry.id === id);
+  if (!item) return;
+  deletingId = id;
+  deleteModal.querySelector("[data-delete-name]").textContent = `Experiment ${item.number}: ${item.title}`;
+  deleteConfirmBtn.disabled = false;
+  showModal(deleteModal);
+  deleteModal.querySelector("[data-delete-cancel].btn").focus();
+}
+
+function closeDeleteModal() {
+  deletingId = null;
+  hideModal(deleteModal);
+}
+
+deleteModal.querySelectorAll("[data-delete-cancel]").forEach((node) => {
+  node.addEventListener("click", closeDeleteModal);
+});
+
+deleteConfirmBtn.addEventListener("click", async () => {
+  const id = deletingId; // only the experiment the dialog was opened for
+  if (!id) return;
+  deleteConfirmBtn.disabled = true;
+  await deleteExperiment(id);
+  closeDeleteModal();
+});
 
 // ---------- Progress & search ----------
 // Progress = completed sub-experiments / all sub-experiments.
@@ -185,6 +241,7 @@ function detailsUrl(item, sub) {
 }
 
 function renderExperiments() {
+  closeAllMenus();
   const visible = searchExperiments().slice().sort((a, b) =>
     a.number.localeCompare(b.number, undefined, { numeric: true })
   );
@@ -203,6 +260,7 @@ function renderExperiments() {
 
 function createCard(item) {
   const card = el("article", "exp-card");
+  card.dataset.id = item.id;
 
   const cover = el("div", "exp-card__cover");
   const image = el("img");
@@ -240,37 +298,63 @@ function createCard(item) {
   return card;
 }
 
+// ---------- Card three-dot menu ----------
+// One ⋮ button in the top-right corner of every card. Each menu is built for one
+// experiment id, so Edit / Delete always act on the card that was clicked.
 function createMenu(id) {
   const menu = el("div", "menu");
+
   menu.innerHTML = `
-    <button type="button" class="menu__toggle" aria-label="Experiment options" aria-haspopup="true" aria-expanded="false">⋮</button>
-    <div class="menu__list" hidden>
-      <button type="button" class="menu__item" data-action="edit">Edit</button>
-      <button type="button" class="menu__item menu__item--danger" data-action="delete">Delete</button>
+    <button type="button" class="menu__toggle" aria-label="Experiment options"
+            aria-haspopup="true" aria-expanded="false">&#8942;</button>
+    <div class="menu__list" role="menu" hidden>
+      <button type="button" class="menu__item" role="menuitem" data-action="edit">
+        <span aria-hidden="true">✏️</span> Edit
+      </button>
+      <button type="button" class="menu__item menu__item--danger" role="menuitem" data-action="delete">
+        <span aria-hidden="true">🗑️</span> Delete
+      </button>
     </div>`;
+
   const toggle = menu.querySelector(".menu__toggle");
   const menuList = menu.querySelector(".menu__list");
 
+  // Nothing inside the menu may reach the card (Read More, etc.)
+  menu.addEventListener("click", (event) => event.stopPropagation());
+
   toggle.addEventListener("click", (event) => {
-    event.stopPropagation();
+    event.preventDefault();
     const willOpen = menuList.hidden;
-    closeAllMenus();
-    menuList.hidden = !willOpen;
-    toggle.setAttribute("aria-expanded", String(willOpen));
+    closeAllMenus();                       // only one dropdown open at a time
+    if (willOpen) {
+      menuList.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      menu.closest(".exp-card")?.classList.add("exp-card--menu-open");
+    }
   });
+
   menuList.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const action = event.target.dataset.action;
+    event.preventDefault();
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
     closeAllMenus();
-    if (action === "edit") openExperimentModal(id);
-    if (action === "delete") deleteExperiment(id);
+    if (button.dataset.action === "edit") openExperimentModal(id);
+    if (button.dataset.action === "delete") requestDeleteExperiment(id);
   });
+
   return menu;
 }
 
 function closeAllMenus() {
-  document.querySelectorAll(".menu__list").forEach((menuList) => (menuList.hidden = true));
-  document.querySelectorAll(".menu__toggle").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
+  document.querySelectorAll(".menu__list").forEach((menuList) => {
+    menuList.hidden = true;
+  });
+  document.querySelectorAll(".menu__toggle").forEach((button) => {
+    button.setAttribute("aria-expanded", "false");
+  });
+  document.querySelectorAll(".exp-card--menu-open").forEach((card) => {
+    card.classList.remove("exp-card--menu-open");
+  });
 }
 
 // ---------- Sub-experiment preview ----------
@@ -337,6 +421,7 @@ function openExperimentModal(id = null) {
 
   if (id) {
     const item = experiments.find((entry) => entry.id === id);
+    if (!item) { editingId = null; return; }
     numberInput.value = item.number;
     nameInput.value = item.title;
     shortInput.value = item.shortDescription;
@@ -721,7 +806,7 @@ async function handleProfileSubmit(event) {
 document.getElementById("openAddBtn").addEventListener("click", () => openExperimentModal());
 document.getElementById("addSubBtn").addEventListener("click", () => addSubBlock());
 document.querySelectorAll(".modal").forEach((modal) => {
-  modal.querySelectorAll("[data-close]").forEach((el) => el.addEventListener("click", () => hideModal(modal)));
+  modal.querySelectorAll("[data-close]").forEach((node) => node.addEventListener("click", () => hideModal(modal)));
 });
 form.addEventListener("submit", handleSubmit);
 coverInput.addEventListener("change", handleMainCoverChange);
@@ -729,10 +814,13 @@ searchInput.addEventListener("input", renderExperiments);
 document.getElementById("editIdBtn").addEventListener("click", openProfileModal);
 profileForm.addEventListener("submit", handleProfileSubmit);
 profilePhotoInput.addEventListener("change", handleProfilePhotoChange);
+
+// Clicking anywhere outside an open menu closes it (clicks inside a menu stop here).
 document.addEventListener("click", closeAllMenus);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   closeAllMenus();
+  if (!deleteModal.hidden) deletingId = null;
   document.querySelectorAll(".modal:not([hidden])").forEach(hideModal);
 });
 
