@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiments – DS Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="topbar">
+      <a class="brand" href="index.html" aria-label="MBU Data Science Digital Laboratory home">
+        <span class="brand__mark" aria-hidden="true">MBU</span>
+        <span class="brand__text">
+          <span class="brand__title">Data Science</span>
+          <span class="brand__subtitle">DIGITAL LABORATORY</span>
+        </span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="mainNav" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="main-nav" id="mainNav" aria-label="Main navigation">
+        <a class="nav__item" href="index.html">Home</a>
+        <a class="nav__item" href="modules.html">Modules</a>
+        <a class="nav__item is-active" href="experiments.html">Experiments</a>
+        <a class="nav__item" href="tools.html">Tools</a>
+        <a class="nav__item" href="resources.html">Resources</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <h2 class="section-title">List of Experiments</h2>
+
+    <div class="toolbar">
+      <input type="search" id="searchInput" class="search" placeholder="Search experiments..." aria-label="Search experiments">
+      <div class="toolbar__side">
+        <span class="progress" id="progressValue" title="Completed sub-experiments">0%</span>
+        <span class="toolbar__label">Experiments</span>
+        <button type="button" class="btn btn--primary" id="openAddBtn">+ Add</button>
+      </div>
+    </div>
+
+    <section id="experimentList" class="list" aria-live="polite"></section>
+
+    <div id="emptyState" class="empty" hidden>
+      <div class="empty__icon" aria-hidden="true">&#128202;</div>
+      <p class="empty__title">No experiments added yet.</p>
+      <p class="empty__text">Click + Add to add your first DS Lab experiment.</p>
+    </div>
+  </main>
+
+  <div class="modal" id="experimentModal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <form class="modal__panel modal__panel--wide" id="experimentForm" novalidate role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h2 id="modalTitle">Add Experiment</h2>
+      <div class="field-row field-row--letter">
+        <label class="field">
+          <span>Experiment Number</span>
+          <input type="text" id="numberInput" maxlength="4" placeholder="1">
+          <small class="error" data-error="number"></small>
+        </label>
+        <label class="field">
+          <span>Experiment Name</span>
+          <input type="text" id="nameInput" maxlength="80" placeholder="Data Collection">
+          <small class="error" data-error="name"></small>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Short Description (D1)</span>
+        <textarea id="shortInput" rows="2" maxlength="300" placeholder="One or two lines shown on the experiment card"></textarea>
+        <small class="error" data-error="description"></small>
+      </label>
+
+      <div class="field">
+        <span>Main Cover Page</span>
+        <label class="upload" for="coverInput">
+          <img id="coverPreview" alt="Cover preview" hidden>
+          <span id="uploadHint">Click to choose an image from your computer</span>
+        </label>
+        <input type="file" id="coverInput" accept="image/*" hidden>
+        <small class="error" data-error="cover"></small>
+      </div>
+
+      <label class="field">
+        <span>D2 Heading</span>
+        <input type="text" id="d2HeadingInput" maxlength="80" placeholder="Enter custom heading (default: Long Description)">
+      </label>
+
+      <label class="field">
+        <span>D2 Long Content</span>
+        <textarea id="d2ContentInput" class="textarea-long" rows="9" placeholder="Complete explanation, topics, steps, notes... shown on the details page"></textarea>
+      </label>
+
+      <div class="field">
+        <span>Video (Optional)</span>
+        <div class="video-field" id="mainVideoField">
+          <input type="file" accept="video/*">
+          <span data-video-status></span>
+          <button type="button" class="btn btn--ghost btn--small" data-video-remove hidden>Remove video</button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>GitHub Link (optional)</span>
+        <input type="url" id="githubInput" placeholder="https://github.com/username/project-name">
+        <small class="error" data-error="github"></small>
+      </label>
+
+      <div class="field">
+        <span>Sub-Experiments (optional)</span>
+        <div id="subList" class="sub-list"></div>
+        <button type="button" class="btn btn--ghost" id="addSubBtn">+ Add Sub-Experiment</button>
+        <small class="error" data-error="subs"></small>
+      </div>
+
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn--primary" id="submitBtn">Add Experiment</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal" id="previewModal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel preview" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+      <button type="button" class="preview__close" data-close aria-label="Close preview">&#10005;</button>
+      <p class="preview__label" id="previewLabel"></p>
+      <div class="preview__cover"><img id="previewCover" alt=""></div>
+      <h2 id="previewTitle"></h2>
+      <p class="preview__desc" id="previewDesc"></p>
+      <div class="preview__actions">
+        <a class="btn btn--primary" id="previewReadMore" href="experiment.html">Read More</a>
+        <a class="btn btn--ghost btn--gh" id="previewGithub" href="#" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="shared.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

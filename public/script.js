@@ -31,6 +31,24 @@ const uploadHint = document.getElementById("uploadHint");
 const subList = document.getElementById("subList");
 const previewModal = document.getElementById("previewModal");
 const toast = document.getElementById("toast");
+const navToggle = document.querySelector(".nav-toggle");
+const mainNav = document.querySelector(".main-nav");
+
+if (navToggle && mainNav) {
+  navToggle.addEventListener("click", () => {
+    const isOpen = mainNav.classList.toggle("is-open");
+    navToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+
+  mainNav.querySelectorAll(".nav__item").forEach((link) => {
+    link.addEventListener("click", () => {
+      if (window.innerWidth <= 760) {
+        mainNav.classList.remove("is-open");
+        navToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  });
+}
 
 // ---------- Helpers ----------
 let toastTimer;
@@ -376,6 +394,8 @@ function openPreview(experimentId, subId) {
 
 // ---------- Video picker (used by the main form and every sub-experiment) ----------
 function bindVideoControl(root, state) {
+  if (!root) return () => {};
+
   const input = root.querySelector('input[type="file"]');
   const status = root.querySelector("[data-video-status]");
   const removeBtn = root.querySelector("[data-video-remove]");
@@ -649,7 +669,15 @@ const profileFields = {
 };
 const profilePhotoInput = document.getElementById("profilePhotoInput");
 const profilePhotoPreview = document.getElementById("profilePhotoPreview");
+const profileLogoInput = document.getElementById("profileLogoInput");
+const profileLogoPreview = document.getElementById("profileLogoPreview");
+const profileLogoFallback = document.getElementById("profileLogoFallback");
+const headerLogoImage = document.getElementById("headerLogoImage");
+const headerLogoFallback = document.getElementById("headerLogoFallback");
+const idCardLogoImage = document.getElementById("idCardLogoImage");
+const idCardLogoFallback = document.getElementById("idCardLogoFallback");
 const idPhoto = document.getElementById("idPhoto");
+const idPhotoPlaceholder = document.getElementById("idPhotoPlaceholder");
 const idOutputs = {
   name: document.getElementById("idName"),
   roll: document.getElementById("idRoll"),
@@ -659,20 +687,33 @@ const idOutputs = {
   githubRepo: document.getElementById("idGithub"),
 };
 
-const defaultProfile = {
+const defaultProfile = idOutputs.name ? {
   name: idOutputs.name.textContent,
   roll: idOutputs.roll.textContent,
   section: idOutputs.section.textContent,
   branch: idOutputs.branch.textContent,
-  assistantProfessor: "", // never hard-coded: comes from the profile form
-  githubRepo: "",         // optional repo link from the profile form
-  photo: idPhoto.getAttribute("src"),
+  assistantProfessor: "",
+  githubRepo: "",
+  photo: idPhoto ? idPhoto.getAttribute("src") : "",
+  logo: "",
+} : {
+  name: "",
+  roll: "",
+  section: "",
+  branch: "",
+  assistantProfessor: "",
+  githubRepo: "",
+  photo: "",
+  logo: "",
 };
 let profile = { ...defaultProfile };
 let pendingPhoto = "";
+let pendingLogo = "";
 
 // Older saved profiles have no assistantProfessor; the merge with defaultProfile keeps them working.
 async function loadProfile() {
+  if (!idOutputs.name || !profileForm) return;
+
   const saved = (() => {
     try {
       return JSON.parse(localStorage.getItem(PROFILE_KEY));
@@ -682,7 +723,7 @@ async function loadProfile() {
   })();
 
   const remote = await apiRequest("/profile");
-  const hasRemoteValues = ["name", "roll", "section", "branch", "assistantProfessor", "githubRepo", "photo"]
+  const hasRemoteValues = ["name", "roll", "section", "branch", "assistantProfessor", "githubRepo", "photo", "logo"]
     .some((key) => Boolean(remote[key]));
   if (!hasRemoteValues && saved) {
     profile = { ...defaultProfile, ...saved };
@@ -693,7 +734,7 @@ async function loadProfile() {
     localStorage.removeItem(PROFILE_KEY);
     return;
   }
-  profile = { ...defaultProfile, ...remote, photo: remote.photo || defaultProfile.photo };
+  profile = { ...defaultProfile, ...remote, photo: remote.photo || defaultProfile.photo, logo: remote.logo || defaultProfile.logo };
 }
 
 async function saveProfile() {
@@ -703,6 +744,7 @@ async function saveProfile() {
       body: JSON.stringify(profile),
     }) };
     profile.photo = profile.photo || defaultProfile.photo;
+    profile.logo = profile.logo || defaultProfile.logo;
     return true;
   } catch (error) {
     showToast(`Could not save ID card: ${error.message}`, true);
@@ -711,10 +753,13 @@ async function saveProfile() {
 }
 
 function renderProfile() {
+  if (!idOutputs.name) return;
+
   Object.keys(idOutputs).forEach((key) => {
+    const output = idOutputs[key];
+    if (!output) return;
     const value = String(profile[key] || "").trim();
     if (key === "githubRepo") {
-      const output = idOutputs[key];
       const valid = value && isValidGithubUrl(value);
       output.classList.toggle("is-empty", !valid);
       if (valid) {
@@ -728,13 +773,37 @@ function renderProfile() {
         output.textContent = "Not added";
       }
     } else if (key === "assistantProfessor") {
-      idOutputs[key].textContent = value || "Not added";
-      idOutputs[key].classList.toggle("is-empty", !value);
+      output.textContent = value || "Not added";
+      output.classList.toggle("is-empty", !value);
     } else {
-      idOutputs[key].textContent = value;
+      output.textContent = value;
     }
   });
-  idPhoto.src = profile.photo;
+  if (idPhoto) {
+    idPhoto.hidden = !profile.photo;
+    if (profile.photo) idPhoto.src = profile.photo;
+  }
+  if (idPhotoPlaceholder) idPhotoPlaceholder.hidden = Boolean(profile.photo);
+  renderProfileLogos(profile.logo);
+}
+
+function setLogoPreview(value) {
+  if (!profileLogoPreview) return;
+  profileLogoPreview.hidden = !value;
+  if (value) profileLogoPreview.src = value;
+  if (profileLogoFallback) profileLogoFallback.hidden = Boolean(value);
+}
+
+function renderProfileLogos(value) {
+  const hasLogo = Boolean(value);
+  [[headerLogoImage, headerLogoFallback], [idCardLogoImage, idCardLogoFallback]].forEach(([image, fallback]) => {
+    if (image) {
+      image.hidden = !hasLogo;
+      if (hasLogo) image.src = value;
+    }
+    if (fallback) fallback.hidden = hasLogo;
+  });
+  setLogoPreview(value);
 }
 
 function openProfileModal() {
@@ -743,8 +812,11 @@ function openProfileModal() {
     setError(`profile-${key}`, "", profileForm);
   });
   setError("profile-photo", "", profileForm);
+  setError("profile-logo", "", profileForm);
   pendingPhoto = profile.photo;
+  pendingLogo = profile.logo || "";
   profilePhotoPreview.src = pendingPhoto;
+  setLogoPreview(pendingLogo);
   profileModal.hidden = false;
   document.body.style.overflow = "hidden";
   profileFields.name.focus();
@@ -771,6 +843,22 @@ async function handleProfilePhotoChange() {
   }
 }
 
+async function handleProfileLogoChange() {
+  const file = profileLogoInput.files[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    setError("profile-logo", "Choose an image file.", profileForm);
+    return;
+  }
+  try {
+    pendingLogo = await readCoverImage(file, MAX_PHOTO_WIDTH);
+    setLogoPreview(pendingLogo);
+    setError("profile-logo", "", profileForm);
+  } catch (error) {
+    setError("profile-logo", error.message, profileForm);
+  }
+}
+
 async function handleProfileSubmit(event) {
   event.preventDefault();
   let valid = true;
@@ -790,7 +878,7 @@ async function handleProfileSubmit(event) {
   if (!valid) return;
 
   const previous = profile;
-  profile = { photo: pendingPhoto };
+  profile = { photo: pendingPhoto, logo: pendingLogo };
   Object.keys(profileFields).forEach((key) => (profile[key] = profileFields[key].value.trim()));
 
   if (!await saveProfile()) {
@@ -803,35 +891,40 @@ async function handleProfileSubmit(event) {
 }
 
 // ---------- Events ----------
-document.getElementById("openAddBtn").addEventListener("click", () => openExperimentModal());
-document.getElementById("addSubBtn").addEventListener("click", () => addSubBlock());
+if (document.getElementById("openAddBtn")) document.getElementById("openAddBtn").addEventListener("click", () => openExperimentModal());
+if (document.getElementById("addSubBtn")) document.getElementById("addSubBtn").addEventListener("click", () => addSubBlock());
 document.querySelectorAll(".modal").forEach((modal) => {
   modal.querySelectorAll("[data-close]").forEach((node) => node.addEventListener("click", () => hideModal(modal)));
 });
-form.addEventListener("submit", handleSubmit);
-coverInput.addEventListener("change", handleMainCoverChange);
-searchInput.addEventListener("input", renderExperiments);
-document.getElementById("editIdBtn").addEventListener("click", openProfileModal);
-profileForm.addEventListener("submit", handleProfileSubmit);
-profilePhotoInput.addEventListener("change", handleProfilePhotoChange);
+if (form) form.addEventListener("submit", handleSubmit);
+if (coverInput) coverInput.addEventListener("change", handleMainCoverChange);
+if (searchInput) searchInput.addEventListener("input", renderExperiments);
+if (document.getElementById("editIdBtn")) document.getElementById("editIdBtn").addEventListener("click", openProfileModal);
+if (profileForm) profileForm.addEventListener("submit", handleProfileSubmit);
+if (profilePhotoInput) profilePhotoInput.addEventListener("change", handleProfilePhotoChange);
+if (profileLogoInput) profileLogoInput.addEventListener("change", handleProfileLogoChange);
 
 // Clicking anywhere outside an open menu closes it (clicks inside a menu stop here).
 document.addEventListener("click", closeAllMenus);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   closeAllMenus();
-  if (!deleteModal.hidden) deletingId = null;
+  if (deleteModal && !deleteModal.hidden) deletingId = null;
   document.querySelectorAll(".modal:not([hidden])").forEach(hideModal);
 });
 
 // ---------- Start ----------
 async function initialize() {
-  try {
-    await loadProfile();
-  } catch (error) {
-    showToast(`Could not load ID card from server: ${error.message}`, true);
+  if (profileForm && idOutputs.name) {
+    try {
+      await loadProfile();
+    } catch (error) {
+      showToast(`Could not load ID card from server: ${error.message}`, true);
+    }
+    renderProfile();
   }
-  renderProfile();
+
+  if (!document.getElementById("experimentList")) return;
 
   try {
     await loadExperiments();
@@ -842,4 +935,4 @@ async function initialize() {
   renderExperiments();
 }
 
-initialize();
+if (document.getElementById("experimentList") || (profileForm && idOutputs.name)) initialize();

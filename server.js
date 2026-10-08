@@ -9,7 +9,18 @@ const mongoose = require("mongoose");
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/dslab";
 const MAX_VIDEO_BYTES = (Number(process.env.MAX_VIDEO_MB) || 300) * 1024 * 1024;
+const MAX_MODULE_FILE_BYTES = (Number(process.env.MAX_MODULE_FILE_MB) || 50) * 1024 * 1024;
 const OBJECT_ID = /^[a-f\d]{24}$/i;
+const MODULE_FILE_TYPES = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".zip": "application/zip",
+};
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -66,7 +77,48 @@ const profileSchema = new Schema({
   assistantProfessor: { type: String, default: "" },
   githubRepo: { type: String, default: "" },
   photo: { type: String, default: "" },
+  logo: { type: String, default: "" },
 }, { timestamps: true });
+
+const learningModuleSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  description: { type: String, required: true, trim: true, maxlength: 1200 },
+  fileId: { type: String, required: true },
+  fileName: { type: String, required: true },
+  fileType: { type: String, required: true },
+}, { timestamps: true });
+
+const toolSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  description: { type: String, required: true, trim: true, maxlength: 600 },
+  details: { type: String, required: true, trim: true, maxlength: 20000 },
+}, { timestamps: true });
+
+const resourceSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  description: { type: String, required: true, trim: true, maxlength: 600 },
+  url: { type: String, required: true, trim: true, maxlength: 2048 },
+}, { timestamps: true });
+
+learningModuleSchema.set("toJSON", {
+  transform(doc, ret) {
+    ret.id = String(ret._id);
+    delete ret._id;
+    delete ret.__v;
+    return ret;
+  },
+});
+
+for (const schema of [toolSchema, resourceSchema]) {
+  schema.set("toJSON", {
+    transform(doc, ret) {
+      ret.id = String(ret._id);
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    },
+  });
+}
 
 profileSchema.set("toJSON", {
   transform(doc, ret) {
@@ -77,7 +129,11 @@ profileSchema.set("toJSON", {
 
 const Experiment = mongoose.model("Experiment", experimentSchema);
 const Profile = mongoose.model("Profile", profileSchema);
+const LearningModule = mongoose.model("LearningModule", learningModuleSchema);
+const Tool = mongoose.model("Tool", toolSchema);
+const Resource = mongoose.model("Resource", resourceSchema);
 let videoBucket; // GridFS bucket for uploaded videos, created after connecting
+let moduleFileBucket;
 
 // ---------- Validation ----------
 const text = (value) => (typeof value === "string" ? value.trim() : "");
@@ -110,6 +166,54 @@ function optionalImage(value) {
   const image = typeof value === "string" ? value : "";
   if (image && !image.startsWith("data:image/")) throw new HttpError(400, "Images must be uploaded image files.");
   return image;
+}
+
+function parseLearningModule(body = {}) {
+  const title = requireText(body.title, "Module title is required.");
+  const description = requireText(body.description, "A module description is required.");
+  if (title.length > 120) throw new HttpError(400, "Module titles must be 120 characters or fewer.");
+  if (description.length > 1200) throw new HttpError(400, "Module descriptions must be 1200 characters or fewer.");
+  const fileId = requireText(body.fileId, "Upload a file for this module.");
+  if (!OBJECT_ID.test(fileId)) throw new HttpError(400, "The uploaded module file is invalid.");
+  return {
+    title,
+    description,
+    fileId,
+    fileName: requireText(body.fileName, "The uploaded file name is missing."),
+    fileType: requireText(body.fileType, "The uploaded file type is missing."),
+  };
+}
+
+function parseCatalogText(body = {}, type) {
+  const title = requireText(body.title, `${type} title is required.`);
+  const description = requireText(body.description, `A short ${type.toLowerCase()} description is required.`);
+  const maxDescriptionLength = 600;
+  if (title.length > 120) throw new HttpError(400, `${type} titles must be 120 characters or fewer.`);
+  if (description.length > maxDescriptionLength) throw new HttpError(400, "Short descriptions must be 600 characters or fewer.");
+  return { title, description };
+}
+
+function parseTool(body = {}) {
+  const textFields = parseCatalogText(body, "Tool");
+  const details = requireText(body.details, "A detailed tool explanation is required.");
+  if (details.length > 20000) throw new HttpError(400, "Tool explanations must be 20000 characters or fewer.");
+  return { ...textFields, details };
+}
+
+function parseResource(body = {}) {
+  const textFields = parseCatalogText(body, "Resource");
+  const value = requireText(body.url, "A resource URL is required.");
+  if (value.length > 2048) throw new HttpError(400, "Resource URLs must be 2048 characters or fewer.");
+  let url;
+  try {
+    url = new URL(value);
+  } catch (error) {
+    throw new HttpError(400, "Enter a valid URL beginning with https:// or http://.");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || !url.hostname) {
+    throw new HttpError(400, "Enter a valid URL beginning with https:// or http://.");
+  }
+  return { ...textFields, url: url.toString() };
 }
 
 function parseSubExperiment(sub, number, usedLetters) {
@@ -158,6 +262,7 @@ function parseProfile(body = {}) {
     assistantProfessor: text(body.assistantProfessor),
     githubRepo: optionalGithub(body.githubRepo),
     photo: optionalImage(body.photo),
+    logo: optionalImage(body.logo),
   };
 }
 
@@ -166,6 +271,15 @@ async function deleteVideoFile(id) {
   if (!OBJECT_ID.test(id || "")) return;
   try {
     await videoBucket.delete(new mongoose.Types.ObjectId(id));
+  } catch (error) {
+    if (!/FileNotFound|no file with id/i.test(String(error.message))) throw error;
+  }
+}
+
+async function deleteModuleFile(id) {
+  if (!OBJECT_ID.test(id || "")) return;
+  try {
+    await moduleFileBucket.delete(new mongoose.Types.ObjectId(id));
   } catch (error) {
     if (!/FileNotFound|no file with id/i.test(String(error.message))) throw error;
   }
@@ -213,6 +327,146 @@ app.delete("/api/experiments/:id", wrap(async (req, res) => {
   await Promise.all(videoIds.map((id) => deleteVideoFile(id).catch((error) => console.error("Video cleanup failed:", error.message))));
   res.json({ ok: true });
 }));
+
+// ----- Learning modules -----
+app.get("/api/modules", wrap(async (req, res) => {
+  res.json(await LearningModule.find().sort({ createdAt: 1 }));
+}));
+
+app.post("/api/modules", wrap(async (req, res) => {
+  const data = parseLearningModule(req.body);
+  const [file] = await moduleFileBucket.find({ _id: new mongoose.Types.ObjectId(data.fileId) }).toArray();
+  if (!file) throw new HttpError(400, "The uploaded module file could not be found.");
+  res.status(201).json(await LearningModule.create(data));
+}));
+
+app.put("/api/modules/:id", wrap(async (req, res) => {
+  if (!OBJECT_ID.test(req.params.id)) throw new HttpError(404, "Module not found");
+  const data = parseLearningModule(req.body);
+  const [file] = await moduleFileBucket.find({ _id: new mongoose.Types.ObjectId(data.fileId) }).toArray();
+  if (!file) throw new HttpError(400, "The uploaded module file could not be found.");
+  const existing = await LearningModule.findById(req.params.id);
+  if (!existing) throw new HttpError(404, "Module not found");
+  const updated = await LearningModule.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true });
+  if (existing.fileId !== data.fileId) {
+    await deleteModuleFile(existing.fileId).catch((error) => console.error("Module file cleanup failed:", error.message));
+  }
+  res.json(updated);
+}));
+
+app.delete("/api/modules/:id", wrap(async (req, res) => {
+  const removed = OBJECT_ID.test(req.params.id) ? await LearningModule.findByIdAndDelete(req.params.id) : null;
+  if (!removed) throw new HttpError(404, "Module not found");
+  await deleteModuleFile(removed.fileId).catch((error) => console.error("Module file cleanup failed:", error.message));
+  res.json({ ok: true });
+}));
+
+app.post("/api/module-files", wrap(async (req, res) => {
+  const rawName = req.get("X-Module-File-Name") || "";
+  let decodedName;
+  try {
+    decodedName = decodeURIComponent(rawName);
+  } catch (error) {
+    throw new HttpError(400, "The uploaded file name is invalid.");
+  }
+  const fileName = path.basename(decodedName.replace(/\\/g, "/")).trim();
+  if (!fileName || /[\u0000-\u001f\u007f]/.test(fileName)) throw new HttpError(400, "The uploaded file name is invalid.");
+  const extension = path.extname(fileName).toLowerCase();
+  const fileType = MODULE_FILE_TYPES[extension];
+  if (!fileType) throw new HttpError(400, "Use a PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, or ZIP file.");
+  if (Number(req.get("content-length")) > MAX_MODULE_FILE_BYTES) {
+    throw new HttpError(413, `Module files can be at most ${Math.round(MAX_MODULE_FILE_BYTES / 1024 / 1024)} MB.`);
+  }
+
+  const upload = moduleFileBucket.openUploadStream(fileName, { metadata: { contentType: fileType } });
+  let received = 0;
+  let settled = false;
+  await new Promise((resolve, reject) => {
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      req.unpipe(upload);
+      upload.abort().catch(() => {});
+      reject(error);
+    };
+    req.on("data", (chunk) => {
+      received += chunk.length;
+      if (received > MAX_MODULE_FILE_BYTES) {
+        fail(new HttpError(413, `Module files can be at most ${Math.round(MAX_MODULE_FILE_BYTES / 1024 / 1024)} MB.`));
+      }
+    });
+    req.on("error", fail);
+    req.on("aborted", () => fail(new HttpError(400, "The file upload was interrupted.")));
+    upload.on("error", fail);
+    upload.on("finish", async () => {
+      if (settled) return;
+      settled = true;
+      if (!received) {
+        await deleteModuleFile(String(upload.id)).catch(() => {});
+        reject(new HttpError(400, "The uploaded file is empty."));
+        return;
+      }
+      resolve();
+    });
+    req.pipe(upload);
+  });
+  res.status(201).json({ id: String(upload.id), fileName, fileType });
+}));
+
+app.get("/api/module-files/:id", wrap(async (req, res) => {
+  if (!OBJECT_ID.test(req.params.id)) throw new HttpError(404, "Module file not found");
+  const id = new mongoose.Types.ObjectId(req.params.id);
+  const [file] = await moduleFileBucket.find({ _id: id }).toArray();
+  if (!file) throw new HttpError(404, "Module file not found");
+
+  const disposition = req.query.download === "1" ? "attachment" : "inline";
+  const safeName = encodeURIComponent(file.filename).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.set({
+    "Content-Type": (file.metadata && file.metadata.contentType) || "application/octet-stream",
+    "Content-Length": file.length,
+    "Content-Disposition": `${disposition}; filename*=UTF-8''${safeName}`,
+    "X-Content-Type-Options": "nosniff",
+  });
+  moduleFileBucket.openDownloadStream(id).on("error", (error) => res.destroy(error)).pipe(res);
+}));
+
+app.delete("/api/module-files/:id", wrap(async (req, res) => {
+  if (!OBJECT_ID.test(req.params.id)) throw new HttpError(404, "Module file not found");
+  if (await LearningModule.exists({ fileId: req.params.id })) {
+    throw new HttpError(409, "This file is still attached to a module.");
+  }
+  await deleteModuleFile(req.params.id);
+  res.json({ ok: true });
+}));
+
+function registerCatalogRoutes(endpoint, Model, parser, label) {
+  app.get(`/api/${endpoint}`, wrap(async (req, res) => {
+    res.json(await Model.find().sort({ createdAt: 1 }));
+  }));
+
+  app.post(`/api/${endpoint}`, wrap(async (req, res) => {
+    res.status(201).json(await Model.create(parser(req.body)));
+  }));
+
+  app.put(`/api/${endpoint}/:id`, wrap(async (req, res) => {
+    if (!OBJECT_ID.test(req.params.id)) throw new HttpError(404, `${label} not found`);
+    const updated = await Model.findByIdAndUpdate(req.params.id, parser(req.body), {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) throw new HttpError(404, `${label} not found`);
+    res.json(updated);
+  }));
+
+  app.delete(`/api/${endpoint}/:id`, wrap(async (req, res) => {
+    const removed = OBJECT_ID.test(req.params.id) ? await Model.findByIdAndDelete(req.params.id) : null;
+    if (!removed) throw new HttpError(404, `${label} not found`);
+    res.json({ ok: true });
+  }));
+}
+
+registerCatalogRoutes("tools", Tool, parseTool, "Tool");
+registerCatalogRoutes("resources", Resource, parseResource, "Resource");
 
 // ----- Profile (ID card) -----
 app.get("/api/profile", wrap(async (req, res) => {
@@ -295,6 +549,7 @@ app.use((error, req, res, next) => {
 async function start() {
   await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
   videoBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "videos" });
+  moduleFileBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "moduleFiles" });
   app.listen(PORT, () => console.log(`DS Lab running at http://localhost:${PORT}`));
 }
 
