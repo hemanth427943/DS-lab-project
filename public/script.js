@@ -922,6 +922,13 @@ async function initialize() {
       showToast(`Could not load ID card from server: ${error.message}`, true);
     }
     renderProfile();
+  } else if (headerLogoImage) {
+    try {
+      const sharedProfile = await apiRequest("/profile");
+      renderProfileLogos(sharedProfile.logo || "");
+    } catch (error) {
+      console.warn(`Could not load shared header logo: ${error.message}`);
+    }
   }
 
   if (!document.getElementById("experimentList")) return;
@@ -935,4 +942,4 @@ async function initialize() {
   renderExperiments();
 }
 
-if (document.getElementById("experimentList") || (profileForm && idOutputs.name)) initialize();
+if (document.getElementById("experimentList") || (profileForm && idOutputs.name) || headerLogoImage) initialize();
