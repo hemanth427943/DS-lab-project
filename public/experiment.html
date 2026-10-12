@@ -10,14 +10,44 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <header class="site-header">
+    <div class="topbar">
+      <a class="brand" href="index.html" aria-label="MBU Data Science Digital Laboratory home">
+        <span class="brand__mark" aria-hidden="true">
+          <img class="brand__logo-image" id="headerLogoImage" alt="" hidden>
+          <span id="headerLogoFallback">MBU</span>
+        </span>
+        <span class="brand__text">
+          <span class="brand__title">Data Science</span>
+          <span class="brand__subtitle">DIGITAL LABORATORY</span>
+        </span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="mainNav" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="main-nav" id="mainNav" aria-label="Main navigation">
+        <a class="nav__item" href="index.html">Home</a>
+        <a class="nav__item" href="modules.html">Modules</a>
+        <a class="nav__item" href="experiments.html">Experiments</a>
+        <a class="nav__item" href="tools.html">Tools</a>
+        <a class="nav__item" href="resources.html">Resources</a>
+        <a class="nav__item" href="compiler.html">Compiler</a>
+      </nav>
+    </div>
+  </header>
   <main class="detail">
     <header class="detail__top">
-      <a class="btn btn--ghost" href="index.html">&larr; Back to Experiments</a>
-      <a class="detail__brand" href="index.html">DS LAB</a>
+      <a class="btn btn--ghost" href="experiments.html">&larr; Back to Experiments</a>
     </header>
     <div id="detail"><p>Loading experiment...</p></div>
   </main>
   <script src="shared.js"></script>
+  <script src="nav.js"></script>
+  <script src="script.js"></script>
   <script src="experiment.js"></script>
 </body>
 </html>

@@ -1063,11 +1063,11 @@ h1, h2, h3, .hero__title, .section-title {
   }
 
   .main-nav {
-    gap: 1.2rem;
+    gap: 0.7rem;
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 840px) {
   .topbar {
     flex-wrap: wrap;
     padding-top: 0.8rem;

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Online Code Compiler – DS Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="compiler.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="topbar">
+      <a class="brand" href="index.html" aria-label="MBU Data Science Digital Laboratory home">
+        <span class="brand__mark" aria-hidden="true">
+          <img class="brand__logo-image" id="headerLogoImage" alt="" hidden>
+          <span id="headerLogoFallback">MBU</span>
+        </span>
+        <span class="brand__text">
+          <span class="brand__title">Data Science</span>
+          <span class="brand__subtitle">DIGITAL LABORATORY</span>
+        </span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="mainNav" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="main-nav" id="mainNav" aria-label="Main navigation">
+        <a class="nav__item" href="index.html">Home</a>
+        <a class="nav__item" href="modules.html">Modules</a>
+        <a class="nav__item" href="experiments.html">Experiments</a>
+        <a class="nav__item" href="tools.html">Tools</a>
+        <a class="nav__item" href="resources.html">Resources</a>
+        <a class="nav__item is-active" href="compiler.html" aria-current="page">Compiler</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="compiler-page">
+    <section class="compiler-heading" aria-labelledby="compilerTitle">
+      <p class="compiler-eyebrow">DS LAB CODING WORKSPACE</p>
+      <h1 id="compilerTitle">Online Code Compiler</h1>
+      <p>Write, run, and test your code in your preferred programming language.</p>
+    </section>
+
+    <section class="language-picker" id="languagePicker" aria-labelledby="languagePickerTitle">
+      <div class="compiler-section-heading">
+        <h2 id="languagePickerTitle">Choose a language</h2>
+        <p>Start a new coding session in your preferred language.</p>
+      </div>
+      <div class="language-grid">
+        <button class="language-card" type="button" data-language="java">
+          <span class="language-card__icon" aria-hidden="true">☕</span>
+          <span class="language-card__title">Java Compiler</span>
+          <span class="language-card__description">Compile and run Java programs.</span>
+          <span class="language-card__action">Open workspace <span aria-hidden="true">→</span></span>
+        </button>
+        <button class="language-card" type="button" data-language="python">
+          <span class="language-card__icon" aria-hidden="true">🐍</span>
+          <span class="language-card__title">Python Compiler</span>
+          <span class="language-card__description">Python 3.12 with NumPy, Pandas, Matplotlib, Seaborn, and Scikit-learn.</span>
+          <span class="language-card__action">Open workspace <span aria-hidden="true">→</span></span>
+        </button>
+        <button class="language-card" type="button" data-language="c">
+          <span class="language-card__icon" aria-hidden="true">💻</span>
+          <span class="language-card__title">C Compiler</span>
+          <span class="language-card__description">Compile and run C programs.</span>
+          <span class="language-card__action">Open workspace <span aria-hidden="true">→</span></span>
+        </button>
+      </div>
+    </section>
+
+    <section class="compiler-workspace" id="compilerWorkspace" aria-labelledby="workspaceTitle" hidden>
+      <div class="workspace-toolbar">
+        <div class="workspace-title">
+          <button type="button" class="back-to-languages" id="backToLanguages">← Back to Languages</button>
+          <div>
+            <p class="compiler-eyebrow">CODING WORKSPACE</p>
+            <h2 id="workspaceTitle">Java Compiler</h2>
+          </div>
+        </div>
+        <div class="language-tabs" role="group" aria-label="Switch programming language">
+          <button type="button" class="language-tab" data-language="java" aria-pressed="false">Java</button>
+          <button type="button" class="language-tab" data-language="python" aria-pressed="false">Python</button>
+          <button type="button" class="language-tab" data-language="c" aria-pressed="false">C</button>
+        </div>
+      </div>
+
+      <div class="workspace-grid">
+        <section class="editor-panel" aria-label="Code editor">
+          <div class="panel-heading">
+            <span><span class="panel-heading__dot" aria-hidden="true"></span> Source code</span>
+            <span class="editor-filename" id="editorFilename">Main.java</span>
+          </div>
+          <textarea id="codeEditor" aria-label="Source code"></textarea>
+          <label class="stdin-field" for="programInput">
+            <span>Program input <span class="stdin-field__optional">(optional · sent to stdin)</span></span>
+            <textarea id="programInput" rows="4" maxlength="8192" placeholder="Enter input your program reads, for example one value per line." spellcheck="false"></textarea>
+          </label>
+          <div class="editor-actions">
+            <button type="button" class="compiler-button compiler-button--primary" id="runCodeBtn">▶ <span>Run Code</span></button>
+            <button type="button" class="compiler-button compiler-button--secondary" id="resetCodeBtn">Reset Code</button>
+          </div>
+        </section>
+
+        <section class="output-panel" aria-labelledby="outputHeading">
+          <div class="panel-heading">
+            <span id="outputHeading"><span class="panel-heading__dot panel-heading__dot--teal" aria-hidden="true"></span> Console</span>
+            <button type="button" class="clear-output" id="clearOutputBtn">Clear Output</button>
+          </div>
+          <div class="run-status" id="runStatus" role="status" aria-live="polite">
+            <span class="run-status__indicator" aria-hidden="true"></span>
+            <span id="runStatusText">Ready to run your code</span>
+          </div>
+          <pre class="console-output" id="consoleOutput" aria-live="polite">Run your code to see output here.</pre>
+        </section>
+      </div>
+    </section>
+    <p class="compiler-note">Code runs in an isolated remote sandbox. Do not submit passwords, tokens, or other sensitive data.</p>
+  </main>
+
+  <script src="shared.js"></script>
+  <script src="nav.js"></script>
+  <script src="script.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="compiler.js"></script>
+</body>
+</html>

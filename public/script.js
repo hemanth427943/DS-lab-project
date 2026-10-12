@@ -31,25 +31,6 @@ const uploadHint = document.getElementById("uploadHint");
 const subList = document.getElementById("subList");
 const previewModal = document.getElementById("previewModal");
 const toast = document.getElementById("toast");
-const navToggle = document.querySelector(".nav-toggle");
-const mainNav = document.querySelector(".main-nav");
-
-if (navToggle && mainNav) {
-  navToggle.addEventListener("click", () => {
-    const isOpen = mainNav.classList.toggle("is-open");
-    navToggle.setAttribute("aria-expanded", String(isOpen));
-  });
-
-  mainNav.querySelectorAll(".nav__item").forEach((link) => {
-    link.addEventListener("click", () => {
-      if (window.innerWidth <= 760) {
-        mainNav.classList.remove("is-open");
-        navToggle.setAttribute("aria-expanded", "false");
-      }
-    });
-  });
-}
-
 // ---------- Helpers ----------
 let toastTimer;
 function showToast(message, isError = false) {

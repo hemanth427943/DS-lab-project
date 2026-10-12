@@ -2,6 +2,8 @@
 require("node:dns").setServers(["8.8.8.8", "1.1.1.1"]);
 require("dotenv").config();
 const path = require("path");
+const { spawn } = require("node:child_process");
+const { randomUUID } = require("node:crypto");
 const cors = require("cors");
 const express = require("express");
 const mongoose = require("mongoose");
@@ -10,6 +12,21 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/dslab";
 const MAX_VIDEO_BYTES = (Number(process.env.MAX_VIDEO_MB) || 300) * 1024 * 1024;
 const MAX_MODULE_FILE_BYTES = (Number(process.env.MAX_MODULE_FILE_MB) || 50) * 1024 * 1024;
+const MAX_COMPILER_SOURCE_BYTES = 48 * 1024;
+const MAX_COMPILER_STDIN_BYTES = 8 * 1024;
+const MAX_COMPILER_RESPONSE_BYTES = 256 * 1024;
+const COMPILER_TIMEOUT_MS = 25000;
+const COMPILER_ENDPOINT = "https://ce.judge0.com";
+const PYTHON_SANDBOX_IMAGE = process.env.PYTHON_SANDBOX_IMAGE || "ds-lab-python-sandbox:latest";
+const COMPILER_LANGUAGES = Object.freeze({
+  java: 91,
+  python: 109,
+  c: 103,
+});
+const COMPILER_REQUESTS_PER_MINUTE = 8;
+const COMPILER_REQUEST_WINDOW_MS = 60 * 1000;
+const PYTHON_SANDBOX_TIMEOUT_MS = 20000;
+const MAX_COMPILER_OUTPUT_BYTES = 32 * 1024;
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const MODULE_FILE_TYPES = {
   ".pdf": "application/pdf",
@@ -134,6 +151,8 @@ const Tool = mongoose.model("Tool", toolSchema);
 const Resource = mongoose.model("Resource", resourceSchema);
 let videoBucket; // GridFS bucket for uploaded videos, created after connecting
 let moduleFileBucket;
+const compilerRequestWindows = new Map();
+let activeCompilerExecutions = 0;
 
 // ---------- Validation ----------
 const text = (value) => (typeof value === "string" ? value.trim() : "");
@@ -292,6 +311,278 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res, 
 if (process.env.CORS_ORIGIN) {
   app.use(cors({ origin: process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim()) }));
 }
+
+function enforceCompilerRateLimit(ip) {
+  const now = Date.now();
+  let window = compilerRequestWindows.get(ip);
+  if (!window || window.resetAt <= now) {
+    if (compilerRequestWindows.size >= 1000) {
+      for (const [key, value] of compilerRequestWindows) {
+        if (value.resetAt <= now) compilerRequestWindows.delete(key);
+      }
+    }
+    if (!window && compilerRequestWindows.size >= 10000) {
+      throw new HttpError(503, "The compiler is busy. Please try again shortly.");
+    }
+    window = { count: 0, resetAt: now + COMPILER_REQUEST_WINDOW_MS };
+    compilerRequestWindows.set(ip, window);
+  }
+  if (window.count >= COMPILER_REQUESTS_PER_MINUTE) {
+    throw new HttpError(429, "You have reached the compiler limit of 8 runs per minute. Please wait and try again.");
+  }
+  window.count += 1;
+}
+
+async function readCompilerResponse(response) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_COMPILER_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new HttpError(502, "The compiler service returned too much output.");
+    }
+    chunks.push(Buffer.from(value));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function requestJudge0(url, options, signal) {
+  const response = await fetch(url, { ...options, signal });
+  if (!response.ok) {
+    if (response.status === 429 || response.status === 503) {
+      throw new HttpError(503, "The compiler service is busy. Please try again shortly.");
+    }
+    console.error(`Compiler service returned HTTP ${response.status}.`);
+    throw new HttpError(502, "The compiler service is unavailable. Please try again later.");
+  }
+  try {
+    return JSON.parse(await readCompilerResponse(response));
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    console.error("Compiler service returned an invalid response:", error.message);
+    throw new HttpError(502, "The compiler service returned an invalid response.");
+  }
+}
+
+function runPythonInSandbox(source, stdin) {
+  return new Promise((resolve, reject) => {
+    const containerName = `ds-lab-python-${randomUUID()}`;
+    const args = [
+      "run", "--rm", "--init", "--name", containerName,
+      "--network=none",
+      "--memory=1g", "--memory-swap=1g", "--cpus=1", "--pids-limit=64",
+      "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+      "--cap-drop=ALL", "--security-opt=no-new-privileges",
+      "--user=65534:65534",
+      "--env", "HOME=/tmp",
+      "--env", "MPLCONFIGDIR=/tmp/matplotlib",
+      "--env", "MPLBACKEND=Agg",
+      "--env", "TMPDIR=/tmp",
+      "--ulimit", "cpu=18:20",
+      "--ulimit", "fsize=10485760:10485760",
+      "--ulimit", "nofile=1024:1024",
+      PYTHON_SANDBOX_IMAGE,
+      "/usr/local/bin/ds-lab-python-runner",
+    ];
+    const runner = spawn("docker", args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let timedOut = false;
+    let outputLimited = false;
+    let settled = false;
+
+    const stopContainer = () => {
+      const killer = spawn("docker", ["kill", containerName], { stdio: "ignore", windowsHide: true });
+      killer.on("error", (error) => console.error("Could not stop compiler container:", error.message));
+      const killTimer = setTimeout(() => runner.kill(), 2000);
+      killTimer.unref();
+    };
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      stopContainer();
+    }, PYTHON_SANDBOX_TIMEOUT_MS);
+
+    const appendOutput = (stream, chunk) => {
+      const currentBytes = stream === "stdout" ? stdoutBytes : stderrBytes;
+      const remainingBytes = Math.max(0, MAX_COMPILER_OUTPUT_BYTES - currentBytes);
+      const clipped = chunk.subarray(0, remainingBytes);
+      if (stream === "stdout") {
+        stdoutBytes += chunk.length;
+        stdout += clipped.toString("utf8");
+      } else {
+        stderrBytes += chunk.length;
+        stderr += clipped.toString("utf8");
+      }
+      if (chunk.length > remainingBytes && !outputLimited) {
+        outputLimited = true;
+        stopContainer();
+      }
+    };
+
+    runner.stdout.on("data", (chunk) => appendOutput("stdout", chunk));
+    runner.stderr.on("data", (chunk) => appendOutput("stderr", chunk));
+    runner.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error.code === "ENOENT") {
+        reject(new HttpError(503, "Python data-science execution requires Docker and the ds-lab-python-sandbox image. See COMPILER.md for setup."));
+      } else {
+        reject(error);
+      }
+    });
+    runner.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if ([125, 126, 127].includes(code) && stderr.trim()) {
+        reject(new HttpError(503, `Could not start the Python sandbox. Build the configured image and check Docker access. ${stderr.trim().slice(0, 1000)}`));
+        return;
+      }
+      if (timedOut) {
+        resolve({
+          ok: false, status: "runtime-error", detail: "Time Limit Exceeded",
+          exitCode: code, compileOutput: "", compileError: "",
+          stdout, stderr: [stderr, "Execution exceeded the 20-second time limit."].filter(Boolean).join("\n"),
+        });
+        return;
+      }
+      if (outputLimited) {
+        resolve({
+          ok: false, status: "runtime-error", detail: "Output Limit Exceeded",
+          exitCode: code, compileOutput: "", compileError: "",
+          stdout, stderr: [stderr, "Output was truncated at 32 KB per stream."].filter(Boolean).join("\n"),
+        });
+        return;
+      }
+      const syntaxError = /SyntaxError:|IndentationError:/.test(stderr);
+      const ok = code === 0;
+      resolve({
+        ok,
+        status: syntaxError ? "compile-error" : ok ? "success" : "runtime-error",
+        detail: ok ? "Execution completed" : syntaxError ? "Syntax Error" : "Runtime Error",
+        exitCode: code,
+        compileOutput: "",
+        compileError: syntaxError ? stderr : "",
+        stdout,
+        stderr: syntaxError ? "" : stderr,
+      });
+    });
+    runner.stdin.on("error", (error) => {
+      if (error.code !== "EPIPE") console.error("Could not send Python program input:", error.message);
+    });
+    runner.stdin.end(JSON.stringify({ code: source, stdin }));
+  });
+}
+
+app.post("/api/compile", express.json({ limit: "512kb" }), wrap(async (req, res) => {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  const language = body.language;
+  const source = body.code;
+  const stdin = body.stdin === undefined ? "" : body.stdin;
+  if (typeof language !== "string" || !Object.hasOwn(COMPILER_LANGUAGES, language)) {
+    throw new HttpError(400, "Choose Java, Python, or C.");
+  }
+  if (typeof source !== "string" || !source.trim()) {
+    throw new HttpError(400, "Enter some code before running the compiler.");
+  }
+  if (Buffer.byteLength(source, "utf8") > MAX_COMPILER_SOURCE_BYTES) {
+    throw new HttpError(413, "Code must be 48 KB or smaller.");
+  }
+  if (typeof stdin !== "string") {
+    throw new HttpError(400, "Program input must be text.");
+  }
+  if (Buffer.byteLength(stdin, "utf8") > MAX_COMPILER_STDIN_BYTES) {
+    throw new HttpError(413, "Program input must be 8 KB or smaller.");
+  }
+  if (activeCompilerExecutions >= 8) {
+    throw new HttpError(503, "The compiler is busy. Please try again shortly.");
+  }
+
+  enforceCompilerRateLimit(req.ip);
+  activeCompilerExecutions += 1;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, COMPILER_TIMEOUT_MS);
+  try {
+    if (language === "python") {
+      res.json(await runPythonInSandbox(source, stdin));
+      return;
+    }
+    const payload = {
+      language_id: COMPILER_LANGUAGES[language],
+      source_code: source,
+      stdin,
+      cpu_time_limit: 5,
+      cpu_extra_time: 1,
+      wall_time_limit: 10,
+      memory_limit: 256000,
+      stack_limit: 64000,
+      max_processes_and_or_threads: 128,
+      max_file_size: 5120,
+      enable_network: false,
+      number_of_runs: 1,
+    };
+    let result = await requestJudge0(`${COMPILER_ENDPOINT}/submissions?base64_encoded=false&wait=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    }, controller.signal);
+    while (result.status && [1, 2].includes(result.status.id)) {
+      if (typeof result.token !== "string" || !result.token) {
+        throw new HttpError(502, "The compiler service did not return a submission ID.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      result = await requestJudge0(
+        `${COMPILER_ENDPOINT}/submissions/${encodeURIComponent(result.token)}?base64_encoded=false`,
+        { method: "GET", headers: { Accept: "application/json" } },
+        controller.signal,
+      );
+    }
+
+    if (!result.status || typeof result.status.id !== "number") {
+      throw new HttpError(502, "The compiler service returned an invalid execution status.");
+    }
+    const statusId = result.status.id;
+    const ok = statusId === 3;
+    const compileError = statusId === 6 ? (result.compile_output || result.message || "") : "";
+    const runtimeError = !ok && statusId !== 6 ? (result.stderr || result.message || "") : "";
+    res.json({
+      ok,
+      status: statusId === 6 ? "compile-error" : ok ? "success" : "runtime-error",
+      detail: result.status.description || "",
+      exitCode: result.exit_code ?? null,
+      compileOutput: statusId === 3 && typeof result.compile_output === "string" ? result.compile_output : "",
+      compileError,
+      stdout: typeof result.stdout === "string" ? result.stdout : "",
+      stderr: typeof runtimeError === "string" ? runtimeError : "",
+    });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (timedOut || error.name === "AbortError") {
+      throw new HttpError(504, "The compiler service took too long to respond. Please try again.");
+    }
+    console.error("Compiler service request failed:", error.message);
+    throw new HttpError(502, "The compiler service is unavailable. Please try again later.");
+  } finally {
+    clearTimeout(timeout);
+    activeCompilerExecutions -= 1;
+  }
+}));
+
 app.use(express.json({ limit: "30mb" })); // covers are stored as compressed image data
 
 // ----- Experiments -----
@@ -537,7 +828,11 @@ app.use(express.static(path.join(__dirname, "public")));
 // ----- Errors -----
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
-  if (error.type === "entity.too.large") error = new HttpError(413, "That request is too large. Try smaller images.");
+  if (error.type === "entity.too.large") {
+    error = new HttpError(413, req.path === "/api/compile"
+      ? "Compiler requests must be 512 KB or smaller."
+      : "That request is too large. Try smaller images.");
+  }
   if (error.type === "entity.parse.failed") error = new HttpError(400, "The request body is not valid JSON.");
   if (error.name === "ValidationError" || error.name === "CastError") error = new HttpError(400, error.message);
   if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });

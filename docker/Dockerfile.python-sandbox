@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    TMPDIR=/tmp
+
+COPY docker/python-requirements.txt /tmp/python-requirements.txt
+RUN python -m pip install --no-cache-dir --requirement /tmp/python-requirements.txt \
+    && rm /tmp/python-requirements.txt
+
+COPY docker/python-runner.py /usr/local/bin/ds-lab-python-runner
+USER 65534:65534
+WORKDIR /tmp
