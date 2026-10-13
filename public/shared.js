@@ -18,6 +18,198 @@ function el(tag, className, text) {
   return node;
 }
 
+function normalizeCodeLanguage(language) {
+  const name = language.trim().toLowerCase().split(/\s+/)[0];
+  const aliases = {
+    "c++": "cpp",
+    "c#": "cs",
+    csharp: "cs",
+    htm: "html",
+    js: "javascript",
+    node: "javascript",
+    py: "python",
+    plaintext: "plaintext",
+    py3: "python",
+    sh: "bash",
+    shell: "bash",
+    ts: "typescript",
+  };
+  return aliases[name] || name;
+}
+
+function createCodeBlock(source, languageHint = "") {
+  const block = el("div", "code-block");
+  const header = el("div", "code-header");
+  const languageLabel = el("span", "code-language", "CODE");
+  const actions = el("div", "code-header__actions");
+  const copyStatus = el("span", "code-copy-status");
+  copyStatus.setAttribute("role", "status");
+  copyStatus.setAttribute("aria-live", "polite");
+  const copyButton = el("button", "copy-code-btn", "Copy");
+  copyButton.type = "button";
+  copyButton.setAttribute("aria-label", "Copy code");
+  actions.append(copyStatus, copyButton);
+  header.append(languageLabel, actions);
+
+  const content = el("div", "code-content");
+  const code = el("code", "");
+  code.textContent = source;
+  const requestedLanguage = normalizeCodeLanguage(languageHint);
+  let detectedLanguage = requestedLanguage;
+  if (window.hljs && source.trim()) {
+    const supportedLanguage = requestedLanguage && window.hljs.getLanguage(requestedLanguage);
+    const highlighted = supportedLanguage
+      ? window.hljs.highlight(source, { language: requestedLanguage, ignoreIllegals: true })
+      : window.hljs.highlightAuto(source);
+    code.innerHTML = highlighted.value;
+    code.classList.add("hljs");
+    detectedLanguage = highlighted.language || requestedLanguage;
+    if (detectedLanguage) code.classList.add(`language-${detectedLanguage}`);
+    code.dataset.highlighted = "yes";
+  } else if (requestedLanguage) {
+    detectedLanguage = requestedLanguage;
+    code.classList.add(`language-${requestedLanguage}`);
+  }
+  if (detectedLanguage) languageLabel.textContent = detectedLanguage.toUpperCase();
+
+  const lineNumbers = el("ol", "line-numbers");
+  lineNumbers.setAttribute("aria-hidden", "true");
+  const lineCount = source.split("\n").length;
+  for (let line = 0; line < lineCount; line += 1) {
+    lineNumbers.appendChild(el("li", "", String(line + 1)));
+  }
+
+  const pre = el("pre", "code-pre");
+  pre.tabIndex = 0;
+  pre.appendChild(code);
+  content.append(lineNumbers, pre);
+  block.append(header, content);
+  return block;
+}
+
+function isLikelyProgram(source) {
+  const lines = source.split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return false;
+  const codeLine = /[;{}]|=>|:=|\b(?:import|from|def|class|return|print|select|insert|create|function|const|let|var|public|static|void|int|float|if|for|while)\b|\b[\w$.]+\s*\([^)]*\)\s*;?$/i;
+  const matchingLines = lines.filter((line) => codeLine.test(line)).length;
+  return matchingLines >= Math.max(1, Math.ceil(lines.length * 0.4));
+}
+
+function renderFormattedContent(container, text) {
+  let code = null;
+  let paragraph = [];
+  let list = null;
+  let section = "";
+  let programLines = [];
+  const flushParagraph = () => {
+    if (paragraph.length) container.appendChild(el("p", "d2-p", paragraph.join("\n")));
+    paragraph = [];
+  };
+  const flushProgram = () => {
+    if (!programLines.length) return;
+    let start = 0;
+    let end = programLines.length;
+    while (start < end && !programLines[start].trim()) start += 1;
+    while (end > start && !programLines[end - 1].trim()) end -= 1;
+    const source = programLines.slice(start, end).join("\n");
+    if (source && isLikelyProgram(source)) container.appendChild(createCodeBlock(source));
+    else if (source) container.appendChild(el("p", "d2-p", source));
+    programLines = [];
+  };
+  const flushList = () => {
+    if (list) container.appendChild(list.element);
+    list = null;
+  };
+  const flushText = () => {
+    flushParagraph();
+    flushList();
+  };
+
+  text.split(/\r?\n/).forEach((line) => {
+    if (/^\s*```/.test(line)) {
+      if (code) {
+        container.appendChild(createCodeBlock(code.lines.join("\n"), code.language));
+        code = null;
+      } else {
+        flushProgram();
+        flushText();
+        code = { language: line.replace(/^\s*```/, "").trim(), lines: [] };
+      }
+      return;
+    }
+    if (code) {
+      code.lines.push(line);
+      return;
+    }
+
+    const heading = line.match(/^\s*(#{1,6})\s*(.+?)\s*#*\s*$/);
+    const namedSection = line.match(/^\s*(Aim|Program|Source Code|Code|Output|Result|Description)\s*:?\s*$/i);
+    const listItem = line.match(/^\s*(?:([-*+])\s+|(\d+)\.\s+)(.+)$/);
+    if (heading || namedSection) {
+      flushProgram();
+      flushText();
+      const title = heading ? heading[2] : namedSection[1];
+      const isMain = !heading || heading[1].length < 3;
+      container.appendChild(el(isMain ? "h2" : "h3", isMain ? "d2-main" : "d2-sub", title));
+      section = /^(program|source code|code)$/i.test(title.trim()) ? "program" : "";
+    } else if (section === "program") {
+      programLines.push(line);
+    } else if (listItem) {
+      flushParagraph();
+      const isOrdered = Boolean(listItem[2]);
+      const type = isOrdered ? "ol" : "ul";
+      if (!list || list.type !== type) {
+        flushList();
+        list = { type, element: el(type, "d2-list") };
+      }
+      list.element.appendChild(el("li", "", listItem[3]));
+    } else if (line.trim() === "") {
+      flushText();
+    } else {
+      flushList();
+      paragraph.push(line);
+    }
+  });
+  flushProgram();
+  if (code) container.appendChild(createCodeBlock(code.lines.join("\n"), code.language));
+  flushText();
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest(".copy-code-btn");
+  if (!button) return;
+
+  const block = button.closest(".code-block");
+  const code = block && block.querySelector(".code-content code");
+  const status = block && block.querySelector(".code-copy-status");
+  if (!code || !status) return;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(code.textContent);
+    } else {
+      const temporaryInput = el("textarea", "");
+      temporaryInput.value = code.textContent;
+      temporaryInput.setAttribute("readonly", "");
+      temporaryInput.style.position = "fixed";
+      temporaryInput.style.opacity = "0";
+      document.body.appendChild(temporaryInput);
+      let copied;
+      try {
+        temporaryInput.select();
+        copied = document.execCommand("copy");
+      } finally {
+        temporaryInput.remove();
+      }
+      if (!copied) throw new Error("Clipboard access was denied.");
+    }
+    status.textContent = "Code copied!";
+  } catch (error) {
+    status.textContent = "Copy failed";
+    console.error("Could not copy code:", error);
+  }
+});
+
 async function apiRequest(path, options = {}) {
   let response;
   try {

@@ -53,40 +53,6 @@ async function attachVideo(slot, key) {
   }
 }
 
-// Display-only: shows "## Heading" lines as styled headings (without the ## marks)
-// and ``` fenced blocks as code blocks. Uses textContent, so nothing is executed.
-function formatD2(box, text) {
-  let code = null;
-  let para = [];
-  const flush = () => {
-    if (para.length) box.appendChild(el("p", "d2-p", para.join("\n")));
-    para = [];
-  };
-  text.split(/\r?\n/).forEach((line) => {
-    if (/^\s*```/.test(line)) {
-      if (code) { box.appendChild(code.pre); code = null; }
-      else { flush(); code = { pre: el("pre", "d2-code"), lines: [] }; code.pre.appendChild(el("code", "")); }
-      return;
-    }
-    if (code) {
-      code.lines.push(line);
-      code.pre.firstChild.textContent = code.lines.join("\n");
-      return;
-    }
-    const m = line.match(/^\s*(#{1,6})\s*(.+?)\s*#*\s*$/);
-    if (m) {
-      flush();
-      box.appendChild(el(m[1].length >= 3 ? "h3" : "h2", m[1].length >= 3 ? "d2-sub" : "d2-main", m[2]));
-    } else if (line.trim() === "") {
-      flush();
-    } else {
-      para.push(line);
-    }
-  });
-  if (code) box.appendChild(code.pre);
-  flush();
-}
-
 // One layout for both main experiments and sub-experiments
 function renderPage({ label, title, video, githubUrl, d2Heading, d2Content, nav }) {
   const sidebar = el("aside", "detail__left");
@@ -107,7 +73,7 @@ function renderPage({ label, title, video, githubUrl, d2Heading, d2Content, nav 
   panel.appendChild(el("h2", "detail__d2-heading", d2Heading || "Long Description"));
   const d2Box = el("div", d2Content ? "detail__d2" : "detail__d2 detail__d2--empty",
     d2Content ? "" : "No detailed description has been added yet.");
-  if (d2Content) formatD2(d2Box, d2Content); // display only: the saved text is never changed
+  if (d2Content) renderFormattedContent(d2Box, d2Content); // display only: the saved text is never changed
   panel.appendChild(d2Box);
 
   const layout = el("div", "detail__layout");

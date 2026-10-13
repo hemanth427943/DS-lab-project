@@ -1733,40 +1733,185 @@ h1, h2, h3, .hero__title, .section-title {
   border-left: 3px solid #7c3aed;
 }
 
-/* Code blocks */
-.d2-code,
-.detail__d2 pre {
-  background: #05070f;
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--neon-cyan);
-  border-radius: var(--radius-md);
-  padding: 1rem 1.25rem;
-  margin: 0 0 1.5rem;
-  overflow-x: auto;            /* scroll sideways instead of wrapping */
+/* Shared code display for experiment content and tool details */
+.code-block {
   max-width: 100%;
-  box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.05);
+  margin: 0 0 1.5rem;
+  overflow: hidden;
+  color: #d4d4d4;
+  background: #1e1e1e;
+  border: 1px solid #3b3b3b;
+  border-radius: 10px;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.12);
+  line-height: normal;
 }
 
-.d2-code code,
-.detail__d2 pre code {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
-  font-size: 0.88rem;
-  line-height: 1.65;
-  color: #0f172a;
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.65rem;
+  gap: 0.75rem;
+  padding: 0.35rem 0.65rem 0.35rem 1rem;
+  background: #252526;
+  border-bottom: 1px solid #383838;
+}
+
+.code-language {
+  color: #b5b5b5;
+  font: 600 0.68rem/1.2 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.1em;
+}
+
+.code-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.code-copy-status {
+  color: #9cdcfe;
+  font-size: 0.75rem;
+}
+
+.copy-code-btn {
+  padding: 0.35rem 0.65rem;
+  color: #d4d4d4;
+  font: 500 0.78rem/1.2 'IBM Plex Sans', sans-serif;
+  background: #333333;
+  border: 1px solid #505050;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.copy-code-btn:hover,
+.copy-code-btn:focus-visible {
+  color: #ffffff;
+  background: #414141;
+  border-color: #777777;
+  outline: none;
+}
+
+.code-content {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: #1e1e1e;
+}
+
+.line-numbers {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  margin: 0;
+  padding: 0.9rem 0.65rem;
+  color: #858585;
+  background: #1e1e1e;
+  border-right: 1px solid #383838;
+  list-style: none;
+  text-align: right;
+  user-select: none;
+  font: 400 0.84rem/1.65 Consolas, 'Fira Code', 'JetBrains Mono', monospace;
+}
+
+.line-numbers li {
+  height: 1.65em;
+}
+
+.code-pre {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  background: #1e1e1e;
+  scrollbar-color: #555555 #1e1e1e;
+}
+
+.code-pre code,
+.code-pre code.hljs {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding: 0;
+  color: #d4d4d4;
+  background: transparent;
+  font: 400 0.84rem/1.65 Consolas, 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
   white-space: pre;
   overflow-wrap: normal;
   word-break: normal;
 }
 
+.code-block .hljs-keyword,
+.code-block .hljs-selector-tag,
+.code-block .hljs-literal,
+.code-block .hljs-built_in,
+.code-block .hljs-type {
+  color: #c586c0;
+}
+
+.code-block .hljs-string,
+.code-block .hljs-template-tag,
+.code-block .hljs-template-variable {
+  color: #6a9955;
+}
+
+.code-block .hljs-number,
+.code-block .hljs-symbol,
+.code-block .hljs-bullet {
+  color: #b5cea8;
+}
+
+.code-block .hljs-comment,
+.code-block .hljs-quote {
+  color: #858585;
+}
+
+.code-block .hljs-title,
+.code-block .hljs-title.function_,
+.code-block .hljs-function,
+.code-block .hljs-attr {
+  color: #dcdcaa;
+}
+
+.code-block .hljs-title.class_,
+.code-block .hljs-class .hljs-title {
+  color: #4ec9b0;
+}
+
+.code-block .hljs-type {
+  color: #4ec9b0;
+}
+
+.code-block .hljs-operator,
+.code-block .hljs-punctuation {
+  color: #d4d4d4;
+}
+
+.d2-list {
+  margin: 0 0 1.1rem;
+  padding-left: 1.5rem;
+}
+
+.d2-list li {
+  padding-left: 0.2rem;
+}
+
 @media (max-width: 800px) {
   .detail { padding: 1.25rem 1rem 3rem; }
   .detail__panel { padding: 1.25rem; }
-  .d2-code { padding: 0.85rem 1rem; }
 }
 
 @media (max-width: 480px) {
   .detail__top { flex-wrap: wrap; }
-  .d2-code code { font-size: 0.8rem; }
+  .code-header { padding-left: 0.75rem; }
+  .line-numbers { min-width: 2.35rem; padding-right: 0.5rem; padding-left: 0.4rem; }
+  .code-pre { padding-right: 0.75rem; padding-left: 0.75rem; }
+  .line-numbers,
+  .code-pre code,
+  .code-pre code.hljs { font-size: 0.78rem; }
 }
 
 .detail__d2--empty,

@@ -193,7 +193,8 @@ function createCatalogCard(item) {
     detailsButton.type = "button";
     detailsButton.addEventListener("click", () => {
       catalogDetailsTitle.textContent = item.title;
-      catalogDetailsContent.textContent = item.details;
+      catalogDetailsContent.replaceChildren();
+      renderFormattedContent(catalogDetailsContent, item.details);
       catalogDetailsModal.hidden = false;
       document.body.style.overflow = "hidden";
     });
