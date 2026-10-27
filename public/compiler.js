@@ -44,6 +44,7 @@ const backButton = document.getElementById("backToLanguages");
 const runStatus = document.getElementById("runStatus");
 const runStatusText = document.getElementById("runStatusText");
 const consoleOutput = document.getElementById("consoleOutput");
+const executionPlots = document.getElementById("executionPlots");
 const languageButtons = document.querySelectorAll("[data-language]");
 let activeLanguage = "";
 let editor;
@@ -78,6 +79,7 @@ function updateLanguage(languageKey) {
   });
   consoleOutput.textContent = "Run your code to see output here.";
   consoleOutput.classList.remove("is-error");
+  renderExecutionPlots([]);
   setStatus("Ready to run your code");
   updateRunButton();
   editor.refresh();
@@ -121,6 +123,19 @@ function formatExecution(result) {
   return sections.join("\n\n") || (result.ok ? "Program completed with no output." : "Execution failed without diagnostic output.");
 }
 
+function renderExecutionPlots(plots) {
+  executionPlots.replaceChildren();
+  (Array.isArray(plots) ? plots : []).forEach((plot, index) => {
+    if (typeof plot !== "string") return;
+    const image = document.createElement("img");
+    image.className = "execution-plot";
+    image.src = `data:image/png;base64,${plot}`;
+    image.alt = `Generated plot ${index + 1}`;
+    executionPlots.appendChild(image);
+  });
+  executionPlots.hidden = executionPlots.childElementCount === 0;
+}
+
 async function runCode() {
   const source = editor.getValue();
   if (!source.trim() || isRunning) {
@@ -137,6 +152,7 @@ async function runCode() {
   workspace.setAttribute("aria-busy", "true");
   consoleOutput.textContent = "Running your code in the sandbox…";
   consoleOutput.classList.remove("is-error");
+  renderExecutionPlots([]);
   setStatus("Running…", "running");
 
   try {
@@ -151,6 +167,7 @@ async function runCode() {
     }
 
     consoleOutput.textContent = formatExecution(result);
+    renderExecutionPlots(result.plots);
     consoleOutput.classList.toggle("is-error", !result.ok);
     if (result.ok) {
       setStatus("Execution completed successfully", "success");
@@ -192,11 +209,13 @@ resetButton.addEventListener("click", () => {
   codeByLanguage[activeLanguage] = languageConfig[activeLanguage].defaultCode;
   consoleOutput.textContent = "Run your code to see output here.";
   consoleOutput.classList.remove("is-error");
+  renderExecutionPlots([]);
   setStatus("Code reset to the starter program");
 });
 clearOutputButton.addEventListener("click", () => {
   consoleOutput.textContent = "";
   consoleOutput.classList.remove("is-error");
+  renderExecutionPlots([]);
   setStatus("Console cleared");
 });
 backButton.addEventListener("click", () => {

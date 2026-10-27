@@ -15,6 +15,11 @@ const MAX_MODULE_FILE_BYTES = (Number(process.env.MAX_MODULE_FILE_MB) || 50) * 1
 const MAX_COMPILER_SOURCE_BYTES = 48 * 1024;
 const MAX_COMPILER_STDIN_BYTES = 8 * 1024;
 const MAX_COMPILER_RESPONSE_BYTES = 256 * 1024;
+const MAX_PYTHON_PROTOCOL_BYTES = 2 * 1024 * 1024;
+const MAX_PYTHON_PLOT_BYTES = 256 * 1024;
+const MAX_PYTHON_TOTAL_PLOT_BYTES = 768 * 1024;
+const MAX_PYTHON_PLOTS = 4;
+const PYTHON_PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const COMPILER_TIMEOUT_MS = 25000;
 const COMPILER_ENDPOINT = "https://ce.judge0.com";
 const PYTHON_SANDBOX_IMAGE = process.env.PYTHON_SANDBOX_IMAGE || "ds-lab-python-sandbox:latest";
@@ -414,7 +419,8 @@ function runPythonInSandbox(source, stdin) {
 
     const appendOutput = (stream, chunk) => {
       const currentBytes = stream === "stdout" ? stdoutBytes : stderrBytes;
-      const remainingBytes = Math.max(0, MAX_COMPILER_OUTPUT_BYTES - currentBytes);
+      const streamLimit = stream === "stdout" ? MAX_PYTHON_PROTOCOL_BYTES : MAX_COMPILER_OUTPUT_BYTES;
+      const remainingBytes = Math.max(0, streamLimit - currentBytes);
       const clipped = chunk.subarray(0, remainingBytes);
       if (stream === "stdout") {
         stdoutBytes += chunk.length;
@@ -436,7 +442,7 @@ function runPythonInSandbox(source, stdin) {
       settled = true;
       clearTimeout(timeout);
       if (error.code === "ENOENT") {
-        reject(new HttpError(503, "Python data-science execution requires Docker and the ds-lab-python-sandbox image. See COMPILER.md for setup."));
+        reject(new HttpError(503, "Docker is not available to the server process. Start Docker Desktop, verify `docker info`, and build the Python sandbox image as described in COMPILER.md."));
       } else {
         reject(error);
       }
@@ -453,7 +459,7 @@ function runPythonInSandbox(source, stdin) {
         resolve({
           ok: false, status: "runtime-error", detail: "Time Limit Exceeded",
           exitCode: code, compileOutput: "", compileError: "",
-          stdout, stderr: [stderr, "Execution exceeded the 20-second time limit."].filter(Boolean).join("\n"),
+          stdout: "", stderr: [stderr, "Execution exceeded the 20-second time limit."].filter(Boolean).join("\n"),
         });
         return;
       }
@@ -461,21 +467,55 @@ function runPythonInSandbox(source, stdin) {
         resolve({
           ok: false, status: "runtime-error", detail: "Output Limit Exceeded",
           exitCode: code, compileOutput: "", compileError: "",
-          stdout, stderr: [stderr, "Output was truncated at 32 KB per stream."].filter(Boolean).join("\n"),
+          stdout: "", stderr: "The Python sandbox response exceeded its output limit.",
         });
         return;
       }
-      const syntaxError = /SyntaxError:|IndentationError:/.test(stderr);
-      const ok = code === 0;
+      const marker = "DSLAB_EXECUTION_RESULT:";
+      const resultLine = stdout.split(/\r?\n/).reverse().find((line) => line.startsWith(marker));
+      if (!resultLine) {
+        reject(new HttpError(502, `The Python sandbox returned an invalid response. ${stderr.trim().slice(0, 500)}`));
+        return;
+      }
+      let result;
+      try {
+        result = JSON.parse(resultLine.slice(marker.length));
+      } catch (error) {
+        reject(new HttpError(502, "The Python sandbox returned an invalid execution result."));
+        return;
+      }
+      const validStatuses = ["success", "compile-error", "runtime-error"];
+      const validTextFields = ["detail", "compileOutput", "compileError", "stdout", "stderr"];
+      let totalPlotBytes = 0;
+      const invalidPlots = Array.isArray(result && result.plots) && result.plots.some((plot) => {
+        if (typeof plot !== "string"
+          || plot.length > Math.ceil(MAX_PYTHON_PLOT_BYTES / 3) * 4
+          || !/^[A-Za-z0-9+/]*={0,2}$/.test(plot)) return true;
+        const image = Buffer.from(plot, "base64");
+        if (!image.subarray(0, PYTHON_PNG_SIGNATURE.length).equals(PYTHON_PNG_SIGNATURE)) return true;
+        totalPlotBytes += image.length;
+        return totalPlotBytes > MAX_PYTHON_TOTAL_PLOT_BYTES;
+      });
+      if (!result || typeof result !== "object"
+        || typeof result.ok !== "boolean"
+        || !validStatuses.includes(result.status)
+        || validTextFields.some((field) => typeof result[field] !== "string")
+        || !Array.isArray(result.plots)
+        || result.plots.length > MAX_PYTHON_PLOTS
+        || invalidPlots) {
+        reject(new HttpError(502, "The Python sandbox returned an invalid execution result."));
+        return;
+      }
       resolve({
-        ok,
-        status: syntaxError ? "compile-error" : ok ? "success" : "runtime-error",
-        detail: ok ? "Execution completed" : syntaxError ? "Syntax Error" : "Runtime Error",
-        exitCode: code,
-        compileOutput: "",
-        compileError: syntaxError ? stderr : "",
-        stdout,
-        stderr: syntaxError ? "" : stderr,
+        ok: result.ok,
+        status: result.status,
+        detail: result.detail,
+        exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
+        compileOutput: result.compileOutput,
+        compileError: result.compileError,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        plots: result.plots,
       });
     });
     runner.stdin.on("error", (error) => {

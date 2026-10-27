@@ -225,9 +225,22 @@ function formatExecutionResult(result) {
     || (result.ok ? "Program completed with no output." : "Execution failed without diagnostic output.");
 }
 
+function renderExecutionPlots(container, plots) {
+  container.replaceChildren();
+  (Array.isArray(plots) ? plots : []).forEach((plot, index) => {
+    if (typeof plot !== "string") return;
+    const image = el("img", "execution-plot");
+    image.src = `data:image/png;base64,${plot}`;
+    image.alt = `Generated plot ${index + 1}`;
+    container.appendChild(image);
+  });
+  container.hidden = container.childElementCount === 0;
+}
+
 async function runExperimentCode() {
   if (experimentRunning || !experimentEditor || !experimentEditor.getValue().trim()) return;
   const output = document.getElementById("experimentOutput");
+  const plots = document.getElementById("experimentPlots");
   const language = document.getElementById("experimentLanguage").value;
   const input = document.getElementById("experimentProgramInput").value;
   experimentRunning = true;
@@ -237,6 +250,7 @@ async function runExperimentCode() {
   document.getElementById("experimentLanguage").disabled = true;
   output.textContent = "Running code in the isolated sandbox…";
   output.classList.remove("is-error");
+  renderExecutionPlots(plots, []);
   document.getElementById("experimentEditorWorkspace").setAttribute("aria-busy", "true");
   setExperimentStatus("Running…", "running");
 
@@ -252,6 +266,7 @@ async function runExperimentCode() {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Compiler request failed (${response.status}).`);
     output.textContent = formatExecutionResult(result);
+    renderExecutionPlots(plots, result.plots);
     output.classList.toggle("is-error", !result.ok);
     if (result.ok) setExperimentStatus("Execution completed successfully", "success");
     else if (result.status === "compile-error") setExperimentStatus("Compilation failed", "error");
@@ -345,7 +360,10 @@ function createEditorPanel(code, language) {
   const output = el("pre", "console-output", code ? "Run the program to see output here." : "This experiment has no saved program.");
   output.id = "experimentOutput";
   output.setAttribute("aria-live", "polite");
-  outputPanel.append(outputHeading, status, output);
+  const plots = el("div", "execution-plots");
+  plots.id = "experimentPlots";
+  plots.hidden = true;
+  outputPanel.append(outputHeading, status, output, plots);
   panel.append(heading, workspace, outputPanel);
 
   languageSelect.addEventListener("change", updateExperimentLanguage);
@@ -356,11 +374,13 @@ function createEditorPanel(code, language) {
       ? "Run the program to see output here."
       : "This experiment has no saved program.";
     document.getElementById("experimentOutput").classList.remove("is-error");
+    renderExecutionPlots(document.getElementById("experimentPlots"), []);
     setExperimentStatus(originalExperimentCode ? "Program reset to saved content" : "No saved program");
   });
   outputHeading.lastElementChild.addEventListener("click", () => {
     output.textContent = "";
     output.classList.remove("is-error");
+    renderExecutionPlots(document.getElementById("experimentPlots"), []);
     setExperimentStatus("Output cleared");
   });
   return panel;
