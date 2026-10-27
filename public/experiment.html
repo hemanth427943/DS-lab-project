@@ -8,9 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 </head>
-<body>
+<body class="page-experiment-detail">
   <header class="site-header">
     <div class="topbar">
       <a class="brand" href="index.html" aria-label="MBU Data Science Digital Laboratory home">
@@ -41,15 +42,14 @@
     </div>
   </header>
   <main class="detail">
-    <header class="detail__top">
-      <a class="btn btn--ghost" href="experiments.html">&larr; Back to Experiments</a>
-    </header>
     <div id="detail"><p>Loading experiment...</p></div>
   </main>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script src="shared.js"></script>
   <script src="nav.js"></script>
   <script src="script.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
   <script src="experiment.js"></script>
 </body>
 </html>

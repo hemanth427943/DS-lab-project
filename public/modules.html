@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="page-modules">
   <header class="site-header">
     <div class="topbar">
       <a class="brand" href="index.html" aria-label="MBU Data Science Digital Laboratory home">
@@ -41,24 +41,69 @@
   </header>
 
   <main class="info-page">
-    <section class="modules-page" aria-labelledby="modulesTitle">
-      <div class="modules-heading">
-        <div>
-      <p class="info-card__eyebrow">Modules</p>
-          <h1 id="modulesTitle">Learning Modules</h1>
-          <p class="modules-intro">Explore course materials and practical learning resources for Data Science.</p>
+    <section class="module-browser" aria-label="Modules and topics">
+      <aside class="module-sidebar" aria-labelledby="moduleSidebarTitle">
+        <div class="module-sidebar__heading">
+          <h2 id="moduleSidebarTitle">Modules &amp; Topics</h2>
+          <span id="moduleSidebarCount">—</span>
         </div>
-        <button type="button" class="btn btn--primary" id="openModuleBtn">+ Add Module</button>
-      </div>
+        <label class="module-sidebar__search">
+          <span class="sr-only">Search modules</span>
+          <input type="search" id="moduleSearch" placeholder="Search modules..." autocomplete="off">
+        </label>
+        <div class="module-sidebar__list" id="moduleSidebarList" aria-live="polite">
+          <p class="module-sidebar__status">Loading modules…</p>
+        </div>
+      </aside>
 
-      <div class="module-grid" id="moduleGrid" aria-live="polite"></div>
-      <div class="module-empty" id="moduleEmpty" hidden>
-        <span class="module-empty__mark" aria-hidden="true">DS</span>
-        <h2>No learning modules yet</h2>
-        <p>Add a module to make course material available here.</p>
+      <div class="module-browser__content">
+        <header class="module-hero" aria-labelledby="modulesTitle">
+          <div>
+            <p class="info-card__eyebrow">Learning pathway</p>
+            <h1 id="modulesTitle">Modules</h1>
+            <p class="modules-intro">Explore course materials and practical learning resources. Open a module to view its description and attached file.</p>
+          </div>
+          <div class="module-hero__actions">
+            <span>Learn · Explore · Apply</span>
+            <button type="button" class="btn btn--primary" id="openModuleBtn">+ Add Module</button>
+          </div>
+        </header>
+
+        <div class="module-results-heading">
+          <div>
+            <p class="info-card__eyebrow">Course library</p>
+            <h2>Available Modules</h2>
+          </div>
+          <span class="module-results-heading__count" id="moduleResultsCount">0 modules</span>
+        </div>
+        <div class="module-grid" id="moduleGrid" aria-live="polite"></div>
+        <div class="module-empty" id="moduleEmpty" hidden>
+          <span class="module-empty__mark" aria-hidden="true">DS</span>
+          <h2>No learning modules yet</h2>
+          <p>Add a module to make course material available here.</p>
+        </div>
+        <p class="module-no-results" id="moduleNoResults" hidden>No modules match your search.</p>
       </div>
     </section>
   </main>
+
+  <div class="modal" id="moduleDetailsModal" hidden>
+    <div class="modal__backdrop" data-module-details-close></div>
+    <section class="modal__panel module-details__panel" role="dialog" aria-modal="true" aria-labelledby="moduleDetailsTitle">
+      <p class="module-card__eyebrow">Learning module</p>
+      <h2 id="moduleDetailsTitle"></h2>
+      <p class="module-details__description" id="moduleDetailsDescription"></p>
+      <div class="module-details__file">
+        <span class="module-card__file-icon" aria-hidden="true">FILE</span>
+        <span class="module-details__file-name" id="moduleDetailsFileName"></span>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" data-module-details-close>Close</button>
+        <a class="btn btn--ghost" id="moduleDetailsViewLink" target="_blank" rel="noopener noreferrer">View file</a>
+        <a class="btn btn--primary" id="moduleDetailsDownloadLink">Download</a>
+      </div>
+    </section>
+  </div>
 
   <div class="modal" id="moduleModal" hidden>
     <div class="modal__backdrop" data-module-close></div>

@@ -143,7 +143,8 @@ function renderFormattedContent(container, text) {
     }
 
     const heading = line.match(/^\s*(#{1,6})\s*(.+?)\s*#*\s*$/);
-    const namedSection = line.match(/^\s*(Aim|Program|Source Code|Code|Output|Result|Description)\s*:?\s*$/i);
+    const namedSection = line.match(/^\s*(Aim|Theory|Syntax|Program|Source Code|Code|Output|Result|Description)\s*:?\s*$/i)
+      || line.match(/^\s*(Aim|Theory|Syntax|Program|Source Code|Code|Output|Result|Description)\s*:\s*(.*?)\s*$/i);
     const listItem = line.match(/^\s*(?:([-*+])\s+|(\d+)\.\s+)(.+)$/);
     if (heading || namedSection) {
       flushProgram();
@@ -152,6 +153,10 @@ function renderFormattedContent(container, text) {
       const isMain = !heading || heading[1].length < 3;
       container.appendChild(el(isMain ? "h2" : "h3", isMain ? "d2-main" : "d2-sub", title));
       section = /^(program|source code|code)$/i.test(title.trim()) ? "program" : "";
+      if (namedSection && namedSection[2]) {
+        if (section === "program") programLines.push(namedSection[2]);
+        else paragraph.push(namedSection[2]);
+      }
     } else if (section === "program") {
       programLines.push(line);
     } else if (listItem) {

@@ -1,5 +1,16 @@
 const moduleGrid = document.getElementById("moduleGrid");
 const moduleEmpty = document.getElementById("moduleEmpty");
+const moduleSidebarList = document.getElementById("moduleSidebarList");
+const moduleSearch = document.getElementById("moduleSearch");
+const moduleSidebarCount = document.getElementById("moduleSidebarCount");
+const moduleResultsCount = document.getElementById("moduleResultsCount");
+const moduleNoResults = document.getElementById("moduleNoResults");
+const moduleDetailsModal = document.getElementById("moduleDetailsModal");
+const moduleDetailsTitle = document.getElementById("moduleDetailsTitle");
+const moduleDetailsDescription = document.getElementById("moduleDetailsDescription");
+const moduleDetailsFileName = document.getElementById("moduleDetailsFileName");
+const moduleDetailsViewLink = document.getElementById("moduleDetailsViewLink");
+const moduleDetailsDownloadLink = document.getElementById("moduleDetailsDownloadLink");
 const moduleModal = document.getElementById("moduleModal");
 const moduleForm = document.getElementById("moduleForm");
 const moduleTitleInput = document.getElementById("moduleTitle");
@@ -20,6 +31,7 @@ let editingModule = null;
 let deletingModule = null;
 let selectedModuleFile = null;
 let moduleToastTimer;
+let moduleDetailsReturnFocus = null;
 
 function showModuleToast(message, isError = false) {
   moduleToast.textContent = message;
@@ -59,6 +71,28 @@ function closeModuleMenus() {
     menu.hidden = true;
     menu.parentElement.querySelector(".module-card__menu-toggle").setAttribute("aria-expanded", "false");
   });
+}
+
+function openModuleDetails(module, trigger) {
+  const fileUrl = `${API_BASE}/module-files/${encodeURIComponent(module.fileId)}`;
+  moduleDetailsTitle.textContent = module.title;
+  moduleDetailsDescription.textContent = module.description;
+  moduleDetailsFileName.textContent = module.fileName;
+  moduleDetailsViewLink.href = fileUrl;
+  moduleDetailsViewLink.setAttribute("aria-label", `View ${module.fileName}`);
+  moduleDetailsDownloadLink.href = `${fileUrl}?download=1`;
+  moduleDetailsDownloadLink.setAttribute("aria-label", `Download ${module.fileName}`);
+  moduleDetailsReturnFocus = trigger;
+  moduleDetailsModal.hidden = false;
+  document.body.style.overflow = "hidden";
+  moduleDetailsModal.querySelector("[data-module-details-close]:not(.modal__backdrop)").focus();
+}
+
+function closeModuleDetails() {
+  moduleDetailsModal.hidden = true;
+  document.body.style.overflow = document.querySelector(".modal:not([hidden])") ? "hidden" : "";
+  if (moduleDetailsReturnFocus && moduleDetailsReturnFocus.isConnected) moduleDetailsReturnFocus.focus();
+  moduleDetailsReturnFocus = null;
 }
 
 function closeModuleForm() {
@@ -173,8 +207,44 @@ async function saveModule(event) {
   }
 }
 
-function createModuleCard(module) {
+function createModuleSidebarEntry(module, index) {
+  const entry = el("article", "module-sidebar__entry");
+  const heading = el("button", "module-sidebar__toggle");
+  heading.type = "button";
+  heading.setAttribute("aria-expanded", "false");
+  heading.setAttribute("aria-controls", `module-sidebar-detail-${index}`);
+  const number = el("span", "module-sidebar__number", String(index + 1).padStart(2, "0"));
+  const title = el("span", "module-sidebar__title", module.title);
+  const resourceCount = el("span", "module-sidebar__resource-count", "1 file");
+  const indicator = el("span", "module-sidebar__indicator", "+");
+  heading.append(number, title, resourceCount, indicator);
+
+  const detail = el("div", "module-sidebar__detail");
+  detail.id = `module-sidebar-detail-${index}`;
+  detail.hidden = true;
+  detail.appendChild(el("p", "", module.description));
+  const fileLink = el("a", "", `Open ${module.fileName}`);
+  fileLink.href = `${API_BASE}/module-files/${encodeURIComponent(module.fileId)}`;
+  fileLink.target = "_blank";
+  fileLink.rel = "noopener noreferrer";
+  detail.appendChild(fileLink);
+
+  heading.addEventListener("click", () => {
+    const expanded = heading.getAttribute("aria-expanded") !== "true";
+    heading.setAttribute("aria-expanded", String(expanded));
+    indicator.textContent = expanded ? "−" : "+";
+    detail.hidden = !expanded;
+  });
+  entry.append(heading, detail);
+  return entry;
+}
+
+function createModuleCard(module, index) {
   const card = el("article", "module-card");
+  const banner = el("div", "module-card__banner");
+  const bannerLabel = el("span", "module-card__banner-label", `MODULE ${String(index + 1).padStart(2, "0")}`);
+  const bannerFile = el("span", "module-card__banner-file", getFileExtension(module.fileName).toUpperCase() || "FILE");
+  banner.append(bannerLabel, bannerFile);
   const menu = el("div", "module-card__menu");
   const menuToggle = el("button", "module-card__menu-toggle");
   menuToggle.type = "button";
@@ -218,9 +288,10 @@ function createModuleCard(module) {
   });
   menuList.addEventListener("click", (event) => event.stopPropagation());
 
-  const eyebrow = el("p", "module-card__eyebrow", "Learning module");
+  const eyebrow = el("p", "module-card__eyebrow", "Course module");
   const title = el("h2", "", module.title);
   const description = el("p", "module-card__description", module.description);
+  const resourceCount = el("p", "module-card__resource-count", "1 uploaded resource");
   const file = el("div", "module-card__file");
   const fileIcon = el("span", "module-card__file-icon");
   fileIcon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.8h6l4 4v12.4H7a1.5 1.5 0 0 1-1.5-1.5V5.3A1.5 1.5 0 0 1 7 3.8Zm6 0v4h4M8.5 13h7m-7 3h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -230,6 +301,10 @@ function createModuleCard(module) {
 
   const actions = el("div", "module-card__actions");
   const fileUrl = `${API_BASE}/module-files/${encodeURIComponent(module.fileId)}`;
+  const detailsButton = el("button", "btn btn--primary", "View More");
+  detailsButton.type = "button";
+  detailsButton.setAttribute("aria-label", `Read more about ${module.title}`);
+  detailsButton.addEventListener("click", () => openModuleDetails(module, detailsButton));
   const viewLink = el("a", "btn btn--ghost", "View file");
   viewLink.href = fileUrl;
   viewLink.target = "_blank";
@@ -238,15 +313,28 @@ function createModuleCard(module) {
   const downloadLink = el("a", "btn btn--primary", "Download");
   downloadLink.href = `${fileUrl}?download=1`;
   downloadLink.setAttribute("aria-label", `Download ${module.fileName}`);
-  actions.append(viewLink, downloadLink);
+  const fileAction = el("a", "btn btn--ghost", "Notes & PDFs");
+  fileAction.href = fileUrl;
+  fileAction.target = "_blank";
+  fileAction.rel = "noopener noreferrer";
+  fileAction.setAttribute("aria-label", `Open notes and PDFs for ${module.title}`);
+  actions.append(fileAction, downloadLink, detailsButton);
 
-  card.append(menu, eyebrow, title, description, file, actions);
+  card.append(menu, banner, eyebrow, title, description, resourceCount, file, actions);
   return card;
 }
 
 function renderModules() {
-  moduleGrid.replaceChildren(...modules.map(createModuleCard));
+  const query = moduleSearch.value.trim().toLowerCase();
+  const filtered = modules.map((module, index) => ({ module, index })).filter(({ module }) =>
+    [module.title, module.description, module.fileName].some((text) => String(text).toLowerCase().includes(query))
+  );
+  moduleSidebarCount.textContent = `${modules.length} ${modules.length === 1 ? "module" : "modules"}`;
+  moduleResultsCount.textContent = `${filtered.length} ${filtered.length === 1 ? "module" : "modules"}`;
+  moduleSidebarList.replaceChildren(...filtered.map(({ module, index }) => createModuleSidebarEntry(module, index)));
+  moduleGrid.replaceChildren(...filtered.map(({ module, index }) => createModuleCard(module, index)));
   moduleEmpty.hidden = modules.length > 0;
+  moduleNoResults.hidden = modules.length === 0 || filtered.length > 0;
 }
 
 async function loadModules() {
@@ -272,6 +360,7 @@ async function deleteModule() {
 }
 
 document.getElementById("openModuleBtn").addEventListener("click", () => openModuleForm());
+moduleSearch.addEventListener("input", renderModules);
 moduleForm.addEventListener("submit", saveModule);
 moduleFileInput.addEventListener("change", () => {
   selectedModuleFile = moduleFileInput.files[0] || null;
@@ -292,6 +381,7 @@ moduleFileInput.addEventListener("change", () => {
 });
 
 document.querySelectorAll("[data-module-close]").forEach((element) => element.addEventListener("click", closeModuleForm));
+document.querySelectorAll("[data-module-details-close]").forEach((element) => element.addEventListener("click", closeModuleDetails));
 document.querySelectorAll("[data-module-delete-close]").forEach((element) => element.addEventListener("click", () => {
   deleteModuleModal.hidden = true;
   deletingModule = null;
@@ -300,7 +390,10 @@ document.querySelectorAll("[data-module-delete-close]").forEach((element) => ele
 confirmDeleteModuleButton.addEventListener("click", deleteModule);
 document.addEventListener("click", closeModuleMenus);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeModuleMenus();
+  if (event.key === "Escape") {
+    closeModuleDetails();
+    closeModuleMenus();
+  }
 });
 
 loadModules().catch((error) => {
