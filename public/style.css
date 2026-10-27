@@ -502,37 +502,6 @@ h1, h2, h3, .hero__title, .section-title {
   background: linear-gradient(90deg, #087f89, #24b8bb, #2f6bff);
 }
 
-.id-card__edit {
-  position: absolute;
-  z-index: 1;
-  top: 1rem;
-  right: 1rem;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid #d3e0eb;
-  border-radius: 50%;
-  color: #42627c;
-  background: #fff;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.id-card__edit svg {
-  width: 17px;
-  height: 17px;
-}
-
-.id-card__edit:hover,
-.id-card__edit:focus-visible {
-  color: #fff;
-  background: #087f89;
-  border-color: #087f89;
-  outline: none;
-}
-
 .info-page {
   max-width: 1240px;
   margin: 0 auto;
@@ -2439,17 +2408,6 @@ h4,
 .id-card__strip {
   height: 4px;
   background: var(--brass);
-}
-
-.id-card__edit {
-  border-color: var(--hairline);
-  color: var(--ink-blue);
-}
-
-.id-card__edit:hover,
-.id-card__edit:focus-visible {
-  border-color: var(--ink-navy);
-  background: var(--ink-navy);
 }
 
 .toolbar,

@@ -1,6 +1,5 @@
 const PROFILE_KEY = "dsLabProfile";
 const MAX_IMAGE_WIDTH = 800;
-const MAX_PHOTO_WIDTH = 300;
 const FORM_ERROR_FIELDS = ["number", "name", "description", "cover", "github", "subs"];
 
 let experiments = [];
@@ -638,21 +637,6 @@ async function handleSubmit(event) {
 }
 
 // ---------- ID card profile ----------
-const profileModal = document.getElementById("profileModal");
-const profileForm = document.getElementById("profileForm");
-const profileFields = {
-  name: document.getElementById("profileName"),
-  roll: document.getElementById("profileRoll"),
-  section: document.getElementById("profileSection"),
-  branch: document.getElementById("profileBranch"),
-  assistantProfessor: document.getElementById("profileProfessor"),
-  githubRepo: document.getElementById("profileGithub"),
-};
-const profilePhotoInput = document.getElementById("profilePhotoInput");
-const profilePhotoPreview = document.getElementById("profilePhotoPreview");
-const profileLogoInput = document.getElementById("profileLogoInput");
-const profileLogoPreview = document.getElementById("profileLogoPreview");
-const profileLogoFallback = document.getElementById("profileLogoFallback");
 const headerLogoImage = document.getElementById("headerLogoImage");
 const headerLogoFallback = document.getElementById("headerLogoFallback");
 const idCardLogoImage = document.getElementById("idCardLogoImage");
@@ -688,12 +672,10 @@ const defaultProfile = idOutputs.name ? {
   logo: "",
 };
 let profile = { ...defaultProfile };
-let pendingPhoto = "";
-let pendingLogo = "";
 
 // Older saved profiles have no assistantProfessor; the merge with defaultProfile keeps them working.
 async function loadProfile() {
-  if (!idOutputs.name || !profileForm) return;
+  if (!idOutputs.name) return;
 
   const saved = (() => {
     try {
@@ -716,21 +698,6 @@ async function loadProfile() {
     return;
   }
   profile = { ...defaultProfile, ...remote, photo: remote.photo || defaultProfile.photo, logo: remote.logo || defaultProfile.logo };
-}
-
-async function saveProfile() {
-  try {
-    profile = { ...defaultProfile, ...await apiRequest("/profile", {
-      method: "PUT",
-      body: JSON.stringify(profile),
-    }) };
-    profile.photo = profile.photo || defaultProfile.photo;
-    profile.logo = profile.logo || defaultProfile.logo;
-    return true;
-  } catch (error) {
-    showToast(`Could not save ID card: ${error.message}`, true);
-    return false;
-  }
 }
 
 function renderProfile() {
@@ -768,13 +735,6 @@ function renderProfile() {
   renderProfileLogos(profile.logo);
 }
 
-function setLogoPreview(value) {
-  if (!profileLogoPreview) return;
-  profileLogoPreview.hidden = !value;
-  if (value) profileLogoPreview.src = value;
-  if (profileLogoFallback) profileLogoFallback.hidden = Boolean(value);
-}
-
 function renderProfileLogos(value) {
   const hasLogo = Boolean(value);
   [[headerLogoImage, headerLogoFallback], [idCardLogoImage, idCardLogoFallback]].forEach(([image, fallback]) => {
@@ -784,91 +744,6 @@ function renderProfileLogos(value) {
     }
     if (fallback) fallback.hidden = hasLogo;
   });
-  setLogoPreview(value);
-}
-
-function openProfileModal() {
-  Object.keys(profileFields).forEach((key) => {
-    profileFields[key].value = profile[key] || "";
-    setError(`profile-${key}`, "", profileForm);
-  });
-  setError("profile-photo", "", profileForm);
-  setError("profile-logo", "", profileForm);
-  pendingPhoto = profile.photo;
-  pendingLogo = profile.logo || "";
-  profilePhotoPreview.src = pendingPhoto;
-  setLogoPreview(pendingLogo);
-  profileModal.hidden = false;
-  document.body.style.overflow = "hidden";
-  profileFields.name.focus();
-}
-
-function closeProfileModal() {
-  profileModal.hidden = true;
-  document.body.style.overflow = "";
-}
-
-async function handleProfilePhotoChange() {
-  const file = profilePhotoInput.files[0];
-  if (!file) return;
-  if (!file.type.startsWith("image/")) {
-    setError("profile-photo", "Choose an image file (JPG, PNG, WebP).", profileForm);
-    return;
-  }
-  try {
-    pendingPhoto = await readCoverImage(file, MAX_PHOTO_WIDTH);
-    profilePhotoPreview.src = pendingPhoto;
-    setError("profile-photo", "", profileForm);
-  } catch (error) {
-    setError("profile-photo", error.message, profileForm);
-  }
-}
-
-async function handleProfileLogoChange() {
-  const file = profileLogoInput.files[0];
-  if (!file) return;
-  if (!file.type.startsWith("image/")) {
-    setError("profile-logo", "Choose an image file.", profileForm);
-    return;
-  }
-  try {
-    pendingLogo = await readCoverImage(file, MAX_PHOTO_WIDTH);
-    setLogoPreview(pendingLogo);
-    setError("profile-logo", "", profileForm);
-  } catch (error) {
-    setError("profile-logo", error.message, profileForm);
-  }
-}
-
-async function handleProfileSubmit(event) {
-  event.preventDefault();
-  let valid = true;
-  // Assistant Professor is optional, so only these four are required
-  const labels = { name: "name", roll: "roll number", section: "section", branch: "branch" };
-
-  Object.keys(labels).forEach((key) => {
-    const empty = !profileFields[key].value.trim();
-    setError(`profile-${key}`, empty ? `Enter your ${labels[key]}.` : "", profileForm);
-    if (empty) valid = false;
-  });
-  // GitHub repo link is optional, but must be a valid github.com link when entered
-  const repo = profileFields.githubRepo.value.trim();
-  const repoOk = !repo || isValidGithubUrl(repo);
-  setError("profile-githubRepo", repoOk ? "" : "Use a link like https://github.com/username/repo-name", profileForm);
-  if (!repoOk) valid = false;
-  if (!valid) return;
-
-  const previous = profile;
-  profile = { photo: pendingPhoto, logo: pendingLogo };
-  Object.keys(profileFields).forEach((key) => (profile[key] = profileFields[key].value.trim()));
-
-  if (!await saveProfile()) {
-    profile = previous;
-    return;
-  }
-  renderProfile();
-  closeProfileModal();
-  showToast("ID card updated.");
 }
 
 // ---------- Events ----------
@@ -880,11 +755,6 @@ document.querySelectorAll(".modal").forEach((modal) => {
 if (form) form.addEventListener("submit", handleSubmit);
 if (coverInput) coverInput.addEventListener("change", handleMainCoverChange);
 if (searchInput) searchInput.addEventListener("input", renderExperiments);
-if (document.getElementById("editIdBtn")) document.getElementById("editIdBtn").addEventListener("click", openProfileModal);
-if (profileForm) profileForm.addEventListener("submit", handleProfileSubmit);
-if (profilePhotoInput) profilePhotoInput.addEventListener("change", handleProfilePhotoChange);
-if (profileLogoInput) profileLogoInput.addEventListener("change", handleProfileLogoChange);
-
 // Clicking anywhere outside an open menu closes it (clicks inside a menu stop here).
 document.addEventListener("click", closeAllMenus);
 document.addEventListener("keydown", (event) => {
@@ -896,7 +766,7 @@ document.addEventListener("keydown", (event) => {
 
 // ---------- Start ----------
 async function initialize() {
-  if (profileForm && idOutputs.name) {
+  if (idOutputs.name) {
     try {
       await loadProfile();
     } catch (error) {
@@ -923,4 +793,4 @@ async function initialize() {
   renderExperiments();
 }
 
-if (document.getElementById("experimentList") || (profileForm && idOutputs.name) || headerLogoImage) initialize();
+if (document.getElementById("experimentList") || idOutputs.name || headerLogoImage) initialize();
